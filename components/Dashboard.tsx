@@ -7,6 +7,8 @@ import { OverviewTab } from "./dashboard/OverviewTab";
 import { FunnelTab } from "./dashboard/FunnelTab";
 import { CloserTab } from "./dashboard/CloserTab";
 import { PipelineTab } from "./dashboard/PipelineTab";
+import { ChangelogModal } from "./dashboard/ChangelogModal";
+import { CURRENT_VERSION } from "@/lib/versions";
 
 type TabId = "overview" | "funnel" | "closer" | "pipeline";
 
@@ -25,9 +27,10 @@ interface HeaderProps {
     loading: boolean;
     lastUpdate: string | null;
     onRefresh: () => void;
+    onVersionClick: () => void;
 }
 
-function Header({ tab, setTab, metrics, loading, lastUpdate, onRefresh }: HeaderProps) {
+function Header({ tab, setTab, metrics, loading, lastUpdate, onRefresh, onVersionClick }: HeaderProps) {
     return (
         <div style={{ background: T.surface, borderBottom: `1px solid ${T.border}`, padding: "0 28px" }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", maxWidth: 1200, margin: "0 auto", padding: "16px 0" }}>
@@ -35,7 +38,24 @@ function Header({ tab, setTab, metrics, loading, lastUpdate, onRefresh }: Header
                     <div style={{ width: 38, height: 38, borderRadius: 10, background: `linear-gradient(135deg, ${T.berry}, ${T.gold})`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 900, color: T.white, fontFamily: "Georgia, serif" }}>WW</div>
                     <div>
                         <div style={{ fontSize: 15, fontWeight: 700, color: T.white }}>Welcome Weddings</div>
-                        <div style={{ fontSize: 10, color: T.muted }}>Funil de Vendas · DB Live</div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                            <div style={{ fontSize: 10, color: T.muted }}>Funil de Vendas · DB Live</div>
+                            <span
+                                onClick={onVersionClick}
+                                style={{
+                                    fontSize: 9,
+                                    color: T.gold,
+                                    background: `${T.gold}15`,
+                                    padding: "1px 5px",
+                                    borderRadius: 4,
+                                    cursor: "pointer",
+                                    fontWeight: 700,
+                                    border: `1px solid ${T.gold}33`
+                                }}
+                            >
+                                v{CURRENT_VERSION.version}
+                            </span>
+                        </div>
                     </div>
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -84,6 +104,7 @@ export default function Dashboard() {
     const [error, setError] = useState<{ type: string; msg: string } | null>(null);
     const [metrics, setMetrics] = useState<Metrics | null>(null);
     const [lastUpdate, setLastUpdate] = useState<string | null>(null);
+    const [isChangelogOpen, setIsChangelogOpen] = useState(false);
 
     const loadData = useCallback(async () => {
         setLoading(true);
@@ -126,6 +147,7 @@ export default function Dashboard() {
         loading,
         lastUpdate,
         onRefresh: loadData,
+        onVersionClick: () => setIsChangelogOpen(true),
     };
 
     if (loading) {
@@ -175,6 +197,10 @@ export default function Dashboard() {
                 {tab === "closer" && <CloserTab m={metrics} />}
                 {tab === "pipeline" && <PipelineTab m={metrics} />}
             </div>
+            <ChangelogModal
+                isOpen={isChangelogOpen}
+                onClose={() => setIsChangelogOpen(false)}
+            />
         </div>
     );
 }

@@ -337,3 +337,28 @@ Primitivos visuais e views de tab que renderizam os dados do `Metrics` sem conte
 - Estilos inline com o objeto `T` da paleta centralizada (sem classes Tailwind nos charts)
 - `formatter: (v: unknown) => string` no label do recharts (tipo exigido pelo recharts v3)
 - Componentes declarados com `"use client"` pois usam hooks do recharts
+ 
+ ---
+ 
+ ## 9. Versioning System — `lib/versions.ts`
+ 
+ **Propósito**
+ Manter o histórico de evolução do projeto (Changelog) e a versão atual exibida na interface.
+ 
+ **Arquivos do módulo**
+ 
+ - `lib/versions.ts`
+ - `components/dashboard/ChangelogModal.tsx`
+ 
+ **Boas práticas**
+ 
+ - Ao realizar qualquer alteração significativa, adicione uma nova entrada no topo do array `VERSION_HISTORY`.
+ - Incrementar a versão seguindo `MAJOR.MINOR.PATCH`.
+ - Listar alterações de forma clara em `changes`.
+ 
+ **O que NÃO deve fazer**
+ 
+ - ❌ Alterar versões passadas (exceto correções ortográficas).
+ - ❌ Esquecer de atualizar `CURRENT_VERSION` (que aponta para `VERSION_HISTORY[0]`).
+ 
+ ---
