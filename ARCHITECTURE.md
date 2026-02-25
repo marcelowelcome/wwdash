@@ -2,23 +2,15 @@
 
 ## Overview
 
-Single-page Next.js 16 application that reads data from the **ActiveCampaign** CRM through a server-side proxy, computes sales funnel metrics, and renders them in a tabbed dashboard. **Supabase** is available for future persistence.
+Single-page Next.js 16 application that reads data from **Supabase** (synced from ActiveCampaign), computes sales funnel metrics, and renders them in a tabbed dashboard.
 
 ---
 
 ## Modules
 
-### API Layer — `app/api/ac/route.ts`
+### Database Layer — `lib/supabase-api.ts`
 
-Server-side proxy that forwards browser requests to the ActiveCampaign REST API, injecting the secret `AC_API_KEY`. The browser never sees the key.
-
-### Data Schemas — `lib/schemas.ts`
-
-Zod schemas that validate every external response from ActiveCampaign (deals, custom fields, stages). Acts as the contract between the API layer and the business logic.
-
-### AC API Helpers — `lib/ac-api.ts`
-
-Async functions (`fetchAllDeals`, `fetchFieldMeta`, `fetchStages`) that call `/api/ac`, paginate results, and validate them against `schemas.ts` before returning typed objects.
+Async functions (`fetchAllDealsFromDb`, `fetchFieldMetaFromDb`, `fetchStagesFromDb`) that query Supabase tables, map columns to the `Deal` schema, and return typed objects. This replaces the legacy ActiveCampaign API helpers.
 
 ### Metrics Engine — `lib/metrics.ts`
 
@@ -30,7 +22,7 @@ Date helpers (`parseDate`, `weekKey`, `inRange`, `daysAgo`, `daysSince`) and the
 
 ### Supabase Client — `lib/supabase.ts`
 
-Initialised Supabase client for future read/write operations (e.g. caching metrics, auth). Validates env vars at startup.
+Initialised Supabase client for all database operations. Validates env vars at startup.
 
 ---
 
@@ -70,15 +62,9 @@ Next.js page that simply renders `<Dashboard />`.
 ```
 Browser
   │
-  ├─► GET /api/ac?path=...   (Next.js Route Handler)
-  │       │
-  │       └─► ActiveCampaign REST API  (server-side, secret key injected)
-  │               │
-  │               └─► JSON response validated by lib/schemas.ts
-  │
   └─► Dashboard.tsx  (Client Component)
           │
-          ├── lib/ac-api.ts  ──► /api/ac  (fetch, paginate, validate)
+          ├── lib/supabase-api.ts  ──► Supabase (PostgreSQL)
           │
           ├── lib/metrics.ts  ──► computeMetrics()  (pure, synchronous)
           │
@@ -89,11 +75,9 @@ Browser
 
 **Communication patterns:**
 
-- **Dashboard → API helpers**: direct `async` function calls (no event bus)
-- **API helpers → proxy**: HTTP `fetch` to `/api/ac`
-- **proxy → ActiveCampaign**: HTTP `fetch` server-side (secrets never reach browser)
-- **Dashboard → tab views**: React props (`m: Metrics`)
-- **Supabase**: client available in `lib/supabase.ts`, not yet called by any component
+- **Dashboard → Database helpers**: direct `async` function calls using the Supabase client.
+- **Database → Dashboard**: Typed data mapped to the legacy `Deal` schema for compatibility.
+- **Supabase**: Primary data source, queried directly from the client (or server actions in the future).
 
 ---
 

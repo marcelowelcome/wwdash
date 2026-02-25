@@ -82,45 +82,44 @@ Definir e exportar os contratos de tipo de todos os dados externos recebidos do 
 
 ---
 
-## 3. `lib/ac-api.ts` — Helpers de Fetch
+## 3. `lib/supabase-api.ts` — Helpers de Banco de Dados
 
 **Propósito**
-Buscar e paginar dados do ActiveCampaign via o proxy `/api/ac`, validando cada resposta antes de retorná-la como tipos seguros.
+Buscar dados de deals diretamente do Supabase, mapeando as colunas do banco para o shape de `Deal` esperado pelo motor de métricas.
 
 **Arquivos do módulo**
 
-- `lib/ac-api.ts`
+- `lib/supabase-api.ts`
 
 **Inputs esperados**
 
-- `fetchAllDeals(group: string, daysBack?: number)` — grupo SDR ou Closer, janela de dias
-- `fetchFieldMeta()` — sem parâmetros
-- `fetchStages()` — sem parâmetros
+- `fetchAllDealsFromDb(pipeline: string, daysBack?: number)` — Filtra por pipeline ("SDR Weddings" ou "Closer Weddings") e data de criação.
+- `fetchFieldMetaFromDb()` — Retorna mapa estático de labels para IDs internos.
+- `fetchStagesFromDb()` — Retorna mapa de estágios (vazio, pois usa títulos do DB).
 
 **Outputs esperados**
 
-- `fetchAllDeals` → `Promise<Deal[]>` (com `_cf` populado)
-- `fetchFieldMeta` → `Promise<Record<string, string>>` (fieldLabel → fieldId)
-- `fetchStages` → `Promise<Record<string, string>>` (stageId → stageTitle)
+- `fetchAllDealsFromDb` → `Promise<Deal[]>` (mapeado de colunas SQL)
+- `fetchFieldMetaFromDb` → `Promise<Record<string, string>>`
+- `fetchStagesFromDb` → `Promise<Record<string, string>>`
 
 **Dependências que usa**
 
-- `lib/schemas.ts` (tipos e schemas Zod)
-- Fetch nativo do browser (chamado apenas client-side via `Dashboard.tsx`)
-- Constantes exportadas: `SDR_GROUP = "1"`, `CLOSER_GROUP = "3"`, `TRAINING_MOTIVE`
+- `lib/supabase.ts` (cliente inicializado)
+- `lib/schemas.ts` (tipo `Deal`)
+- Constantes: `SDR_PIPELINE`, `CLOSER_PIPELINE`, `TRAINING_MOTIVE`
 
 **O que NÃO deve fazer**
 
-- ❌ Calcular métricas ou derivar KPIs
-- ❌ Manter estado (sem cache interno, sem singletons)
-- ❌ Chamar a API do ActiveCampaign diretamente (sempre via `/api/ac`)
-- ❌ Lançar erros silenciosamente — em falha de validação o erro é logado e retorna `[]` ou `{}`
+- ❌ Calcular métricas ou KPIs
+- ❌ Chamar a API externa do ActiveCampaign
+- ❌ Manter estado global
 
 **Decisões técnicas já tomadas**
 
-- Paginação com `offset` de 100 em 100 até `meta.total` ser atingido
-- `safeParse` (não `parse`) para não lançar exceção em validação
-- `buildWeekLabel()` é helper local exportado para evitar duplicação em `metrics.ts`
+- Status "Won", "Open", "Lost" são convertidos para "0", "1", "2" para retrocompatibilidade.
+- Campos personalizados (`motivos_qualificacao_sdr`, `motivo_perda`) são mapeados para o objeto `_cf`.
+- `buildWeekLabel` é re-exportado aqui para ser usado pelo motor de métricas.
 
 ---
 
@@ -152,7 +151,7 @@ computeMetrics(
 
 - `lib/schemas.ts` — tipos `Deal`, `Status`
 - `lib/utils.ts` — `parseDate`, `daysSince`, `weekKey`, `inRange`, `daysAgo`
-- `lib/ac-api.ts` — `TRAINING_MOTIVE`, `buildWeekLabel`
+- `lib/supabase-api.ts` — `TRAINING_MOTIVE`, `buildWeekLabel`
 
 **O que NÃO deve fazer**
 
@@ -269,7 +268,7 @@ Componente React client-side que gerencia estado de loading/erro, coordena as ch
 
 **Dependências que usa**
 
-- `lib/ac-api.ts` — `fetchAllDeals`, `fetchFieldMeta`, `fetchStages`
+- `lib/supabase-api.ts` — `fetchAllDealsFromDb`, `fetchFieldMetaFromDb`, `fetchStagesFromDb`
 - `lib/metrics.ts` — `computeMetrics`, `Metrics`
 - `components/dashboard/theme.ts` — `T`, `statusColor`
 - `components/dashboard/OverviewTab`, `FunnelTab`, `CloserTab`, `PipelineTab`
@@ -277,7 +276,7 @@ Componente React client-side que gerencia estado de loading/erro, coordena as ch
 **O que NÃO deve fazer**
 
 - ❌ Calcular métricas inline (delegado a `metrics.ts`)
-- ❌ Fazer fetch direto à API do ActiveCampaign (delegado a `ac-api.ts`)
+- ❌ Fazer fetch direto à API do ActiveCampaign (delegado agora ao Supabase via `supabase-api.ts`)
 - ❌ Conter lógica de renderização de charts (delegado aos tab components)
 - ❌ Ultrapassar ~150 linhas
 

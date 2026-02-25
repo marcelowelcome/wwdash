@@ -1,6 +1,6 @@
 import { type Deal, type Status } from "./schemas";
 import { parseDate, daysSince, weekKey, inRange, daysAgo } from "./utils";
-import { TRAINING_MOTIVE, buildWeekLabel } from "./ac-api";
+import { TRAINING_MOTIVE, buildWeekLabel } from "./supabase-api";
 
 // ─── METRICS COMPUTATION ───────────────────────────────────────────────────────
 /**

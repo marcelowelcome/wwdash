@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
-import { fetchAllDeals, fetchFieldMeta, fetchStages, SDR_GROUP, CLOSER_GROUP } from "@/lib/ac-api";
+import { fetchAllDealsFromDb, fetchFieldMetaFromDb, fetchStagesFromDb, SDR_PIPELINE, CLOSER_PIPELINE } from "@/lib/supabase-api";
 import { computeMetrics, type Metrics } from "@/lib/metrics";
 import { T, statusColor } from "./dashboard/theme";
 import { OverviewTab } from "./dashboard/OverviewTab";
@@ -35,7 +35,7 @@ function Header({ tab, setTab, metrics, loading, lastUpdate, onRefresh }: Header
                     <div style={{ width: 38, height: 38, borderRadius: 10, background: `linear-gradient(135deg, ${T.berry}, ${T.gold})`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 900, color: T.white, fontFamily: "Georgia, serif" }}>WW</div>
                     <div>
                         <div style={{ fontSize: 15, fontWeight: 700, color: T.white }}>Welcome Weddings</div>
-                        <div style={{ fontSize: 10, color: T.muted }}>Funil de Vendas · Ao Vivo</div>
+                        <div style={{ fontSize: 10, color: T.muted }}>Funil de Vendas · DB Live</div>
                     </div>
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -80,7 +80,7 @@ function Header({ tab, setTab, metrics, loading, lastUpdate, onRefresh }: Header
 export default function Dashboard() {
     const [tab, setTab] = useState<TabId>("overview");
     const [loading, setLoading] = useState(true);
-    const [loadStep, setLoadStep] = useState("Conectando à API…");
+    const [loadStep, setLoadStep] = useState("Conectando ao banco de dados…");
     const [error, setError] = useState<{ type: string; msg: string } | null>(null);
     const [metrics, setMetrics] = useState<Metrics | null>(null);
     const [lastUpdate, setLastUpdate] = useState<string | null>(null);
@@ -89,15 +89,15 @@ export default function Dashboard() {
         setLoading(true);
         setError(null);
         try {
-            setLoadStep("Buscando configuração de campos…");
+            setLoadStep("Configurando mapeamento de campos…");
             const [fieldMap, stageMap] = await Promise.all([
-                fetchFieldMeta(),
-                fetchStages(),
+                fetchFieldMetaFromDb(),
+                fetchStagesFromDb(),
             ]);
             setLoadStep("Carregando leads SDR (últimos 90 dias)…");
-            const sdrDeals = await fetchAllDeals(SDR_GROUP, 90);
+            const sdrDeals = await fetchAllDealsFromDb(SDR_PIPELINE, 90);
             setLoadStep("Carregando pipeline Closer (últimos 365 dias)…");
-            const closerDeals = await fetchAllDeals(CLOSER_GROUP, 365);
+            const closerDeals = await fetchAllDealsFromDb(CLOSER_PIPELINE, 365);
             setLoadStep("Calculando métricas…");
             setMetrics(computeMetrics(sdrDeals, closerDeals, fieldMap, stageMap));
             setLastUpdate(new Date().toLocaleTimeString("pt-BR"));
@@ -105,10 +105,7 @@ export default function Dashboard() {
             const msg = e instanceof Error ? e.message : String(e);
             console.error("[Dashboard] loadData error:", msg);
             setError({
-                type:
-                    msg.includes("Failed to fetch") || msg.includes("CORS")
-                        ? "cors"
-                        : "api",
+                type: "db",
                 msg,
             });
         } finally {
@@ -138,7 +135,7 @@ export default function Dashboard() {
                 <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 20 }}>
                     <div className="animate-spin-slow" style={{ fontSize: 36 }}>⟳</div>
                     <div style={{ fontSize: 14, color: T.muted }}>{loadStep}</div>
-                    <div style={{ fontSize: 11, color: T.border }}>Conectando ao ActiveCampaign…</div>
+                    <div style={{ fontSize: 11, color: T.border }}>Lendo do Supabase (deals)…</div>
                 </div>
             </div>
         );
