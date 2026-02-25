@@ -1,0 +1,48 @@
+@import "tailwindcss";
+
+@theme {
+  --color-bg: #0E0A14;
+  --color-surface: #17101F;
+  --color-card: #1E1530;
+  --color-border: #2E2040;
+  --color-berry: #7B2D52;
+  --color-rose: #C2758A;
+  --color-gold: #D4A35A;
+  --color-cream: #F5EDE0;
+  --color-muted: #6B5C7A;
+  --color-status-red: #E05252;
+  --color-status-orange: #E08C3A;
+  --color-status-green: #3DBF8A;
+  --color-off-white: #F8F4FF;
+
+  --font-family-sans: "'Trebuchet MS'", "'Lucida Grande'", sans-serif;
+  --font-family-serif: Georgia, serif;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body {
+  height: 100%;
+  background: #0E0A14;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.animate-spin-slow {
+  animation: spin 1s linear infinite;
+}
