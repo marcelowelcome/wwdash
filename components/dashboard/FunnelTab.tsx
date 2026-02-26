@@ -20,7 +20,7 @@ export function FunnelTab({ m }: FunnelTabProps) {
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 18 }}>
                 {/* SDR Volume Chart */}
                 <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: "20px 22px" }}>
-                    <SectionTitle>Volume SDR por Semana</SectionTitle>
+                    <SectionTitle metricKey="sdrThisWeek">Volume SDR por Semana</SectionTitle>
                     <ResponsiveContainer width="100%" height={240}>
                         <AreaChart data={m.sdrWeeks} margin={{ top: 4, right: 4, bottom: 0, left: -20 }}>
                             <defs>
@@ -43,7 +43,7 @@ export function FunnelTab({ m }: FunnelTabProps) {
 
                 {/* Qualification Rate Chart */}
                 <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: "20px 22px" }}>
-                    <SectionTitle>Taxa de Qualificação SDR → Closer</SectionTitle>
+                    <SectionTitle metricKey="qualRate">Taxa de Qualificação SDR → Closer</SectionTitle>
                     <ResponsiveContainer width="100%" height={240}>
                         <BarChart data={m.sdrQualTrend} margin={{ top: 4, right: 4, bottom: 0, left: -20 }}>
                             <CartesianGrid strokeDasharray="3 3" stroke={T.border} vertical={false} />
@@ -64,7 +64,7 @@ export function FunnelTab({ m }: FunnelTabProps) {
 
             {/* Funnel of Current Week */}
             <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: "20px 22px" }}>
-                <SectionTitle>Funil da Semana Atual</SectionTitle>
+                <SectionTitle metricKey="qualRate">Funil da Semana Atual</SectionTitle>
                 <div style={{ display: "flex", alignItems: "stretch", gap: 0 }}>
                     {[
                         { label: "Leads SDR", n: m.sdrThisWeek, color: T.gold, sub: "Entradas brutas" },

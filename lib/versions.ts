@@ -7,6 +7,17 @@ export interface VersionEntry {
 
 export const VERSION_HISTORY: VersionEntry[] = [
     {
+        version: "1.2.0",
+        date: "2026-02-26",
+        description: "Dicionário de Métricas e Auxiliares Visuais.",
+        changes: [
+            "Criação da página 'Dicionário' com definições detalhadas de cada métrica.",
+            "Implementação de hover helpers (tooltips) em todos os KPIs e títulos de seção.",
+            "Centralização das regras de cálculo e origens de dados em `metrics-definitions.ts`.",
+            "Melhoria na transparência dos dados para os usuários finais.",
+        ],
+    },
+    {
         version: "1.1.0",
         date: "2026-02-25",
         description: "Migração de infraestrutura de dados e sistema de versionamento.",

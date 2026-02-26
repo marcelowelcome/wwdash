@@ -7,16 +7,18 @@ import { OverviewTab } from "./dashboard/OverviewTab";
 import { FunnelTab } from "./dashboard/FunnelTab";
 import { CloserTab } from "./dashboard/CloserTab";
 import { PipelineTab } from "./dashboard/PipelineTab";
+import { DictionaryTab } from "./dashboard/DictionaryTab";
 import { ChangelogModal } from "./dashboard/ChangelogModal";
 import { CURRENT_VERSION } from "@/lib/versions";
 
-type TabId = "overview" | "funnel" | "closer" | "pipeline";
+type TabId = "overview" | "funnel" | "closer" | "pipeline" | "dictionary";
 
 const TABS: { id: TabId; label: string }[] = [
     { id: "overview", label: "Visão Geral" },
     { id: "funnel", label: "Topo do Funil" },
     { id: "closer", label: "Closer" },
     { id: "pipeline", label: "Pipeline" },
+    { id: "dictionary", label: "Dicionário" },
 ];
 
 // ─── HEADER ───────────────────────────────────────────────────────────────────
@@ -196,6 +198,7 @@ export default function Dashboard() {
                 {tab === "funnel" && <FunnelTab m={metrics} />}
                 {tab === "closer" && <CloserTab m={metrics} />}
                 {tab === "pipeline" && <PipelineTab m={metrics} />}
+                {tab === "dictionary" && <DictionaryTab />}
             </div>
             <ChangelogModal
                 isOpen={isChangelogOpen}

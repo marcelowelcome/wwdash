@@ -26,6 +26,7 @@ export function OverviewTab({ m }: OverviewTabProps) {
                     sub={`Média 4 sem: ${m.sdrAvg4}`}
                     status={m.sdrStatus}
                     delta={`${m.sdrVsAvg > 100 ? "▲" : "▼"} ${m.sdrVsAvg.toFixed(0)}% vs média`}
+                    metricKey="sdrThisWeek"
                 />
                 <KpiCard
                     label="Taxa Qualificação SDR"
@@ -33,6 +34,7 @@ export function OverviewTab({ m }: OverviewTabProps) {
                     sub="Range ideal: 10–15%"
                     status={m.qualStatus}
                     delta={m.qualRate < 10 ? "🔴 Restritiva" : m.qualRate > 20 ? "🔴 Alta demais" : "✓ Normal"}
+                    metricKey="qualRate"
                 />
                 <KpiCard
                     label="Conversão Closer MM4s"
@@ -40,6 +42,7 @@ export function OverviewTab({ m }: OverviewTabProps) {
                     sub={`Hist. calc: ${m.histRate}%`}
                     status={m.convStatus}
                     delta={`${m.conv_curr > m.conv_prev ? "▲" : "▼"} ${Math.abs(m.conv_curr - m.conv_prev).toFixed(1)}pp vs anterior`}
+                    metricKey="conv_curr"
                 />
                 <KpiCard
                     label="Velocity do Pipeline"
@@ -47,6 +50,7 @@ export function OverviewTab({ m }: OverviewTabProps) {
                     sub="Meta: >60%"
                     status={m.velocityStatus}
                     delta={m.velocity >= 60 ? "✓ Deals se movendo" : "🔴 Deals travados"}
+                    metricKey="velocity"
                 />
                 <KpiCard
                     label="Pipeline Ativo"
@@ -54,13 +58,14 @@ export function OverviewTab({ m }: OverviewTabProps) {
                     sub={`${m.pipeByStage[0]?.stage || "—"}: ${m.pipeByStage[0]?.n || 0}`}
                     status={m.pipelineStatus}
                     delta={`${m.won_curr} won · ${m.lost_curr} lost (4 sem)`}
+                    metricKey="pipelineStatus"
                 />
             </div>
 
             {/* Charts Row */}
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 18 }}>
                 <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: "20px 22px" }}>
-                    <SectionTitle tag={m.sdrStatus === "green" ? "🟢 SAUDÁVEL" : "🔴 CRÍTICO"}>Volume SDR</SectionTitle>
+                    <SectionTitle tag={m.sdrStatus === "green" ? "🟢 SAUDÁVEL" : "🔴 CRÍTICO"} metricKey="sdrThisWeek">Volume SDR</SectionTitle>
                     <ResponsiveContainer width="100%" height={200}>
                         <AreaChart data={m.sdrWeeks} margin={{ top: 4, right: 4, bottom: 0, left: -20 }}>
                             <defs>
@@ -82,7 +87,7 @@ export function OverviewTab({ m }: OverviewTabProps) {
                 </div>
 
                 <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: "20px 22px" }}>
-                    <SectionTitle tag={m.convStatus === "red" ? "🔴 CRÍTICO" : m.convStatus === "orange" ? "🟡 ATENÇÃO" : "🟢 SAUDÁVEL"}>Conversão Closer MM4s</SectionTitle>
+                    <SectionTitle tag={m.convStatus === "red" ? "🔴 CRÍTICO" : m.convStatus === "orange" ? "🟡 ATENÇÃO" : "🟢 SAUDÁVEL"} metricKey="conv_curr">Conversão Closer MM4s</SectionTitle>
                     <ResponsiveContainer width="100%" height={200}>
                         <BarChart data={m.convTrend} margin={{ top: 4, right: 4, bottom: 0, left: -20 }}>
                             <CartesianGrid strokeDasharray="3 3" stroke={T.border} vertical={false} />

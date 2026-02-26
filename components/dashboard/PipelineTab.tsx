@@ -14,7 +14,7 @@ export function PipelineTab({ m }: PipelineTabProps) {
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 18 }}>
                 {/* By Stage */}
                 <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: "20px 22px" }}>
-                    <SectionTitle>Por Estágio — {m.openDeals} Deals Abertos</SectionTitle>
+                    <SectionTitle metricKey="pipeByStage">Por Estágio — {m.openDeals} Deals Abertos</SectionTitle>
                     <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 4 }}>
                         {m.pipeByStage.map((st, i) => {
                             const colors = [T.muted, T.rose, T.gold, T.green, T.orange, T.berry];
@@ -45,7 +45,7 @@ export function PipelineTab({ m }: PipelineTabProps) {
 
                 {/* By Age */}
                 <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: "20px 22px" }}>
-                    <SectionTitle>Por Idade no Pipeline</SectionTitle>
+                    <SectionTitle metricKey="pipeByAge">Por Idade no Pipeline</SectionTitle>
                     <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 4 }}>
                         {m.pipeByAge.map((ag, i) => {
                             const c = statusColor(ag.status);

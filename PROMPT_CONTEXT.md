@@ -362,3 +362,29 @@ Primitivos visuais e views de tab que renderizam os dados do `Metrics` sem conte
  - ❌ Esquecer de atualizar `CURRENT_VERSION` (que aponta para `VERSION_HISTORY[0]`).
  
  ---
+  ---
+  
+  ## 10. Metrics Dictionary — `lib/metrics-definitions.ts`
+  
+  **Propósito**
+  Centralizar o conhecimento de negócio sobre o que cada métrica representa, qual sua origem técnica e como é calculada.
+  
+  **Arquivos do módulo**
+  
+  - `lib/metrics-definitions.ts`
+  - `components/dashboard/MetricHelper.tsx`
+  - `components/dashboard/DictionaryTab.tsx`
+  
+  **Inputs esperados**
+  
+  - Constante `METRIC_DEFINITIONS` que mapeia as keys retornadas por `computeMetrics()` para objetos de metadados.
+  
+  **Uso dos componentes**
+  
+  - `KpiCard` e `SectionTitle` aceitam opcionalmente `metricKey` para renderizar o `MetricHelper`.
+  - O `MetricHelper` é um componente client-side que exibe um tooltip com as informações da métrica ao passar o mouse.
+  
+  **O que NÃO deve fazer**
+  
+  - ❌ Adicionar lógica de cálculo aqui (deve permanecer em `metrics.ts`).
+  - ❌ Referenciar dados mutáveis (é uma definição estática).

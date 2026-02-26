@@ -20,7 +20,7 @@ export function CloserTab({ m }: CloserTabProps) {
             <div style={{ display: "grid", gridTemplateColumns: "3fr 2fr", gap: 18 }}>
                 {/* Conversion trend over 4-week windows */}
                 <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: "20px 22px" }}>
-                    <SectionTitle tag={m.convStatus === "red" ? "🔴 CRÍTICO" : "🟡 ATENÇÃO"}>
+                    <SectionTitle tag={m.convStatus === "red" ? "🔴 CRÍTICO" : "🟡 ATENÇÃO"} metricKey="conv_curr">
                         Conversão — Janelas 4 Semanas
                     </SectionTitle>
                     <ResponsiveContainer width="100%" height={240}>
@@ -44,7 +44,7 @@ export function CloserTab({ m }: CloserTabProps) {
 
                 {/* Current period breakdown */}
                 <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: "20px 22px" }}>
-                    <SectionTitle>Período Atual (28 dias)</SectionTitle>
+                    <SectionTitle metricKey="conv_curr">Período Atual (28 dias)</SectionTitle>
                     <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 4 }}>
                         {[
                             { label: "Entraram no Closer", v: m.enteredMM4, color: T.rose },
@@ -73,7 +73,7 @@ export function CloserTab({ m }: CloserTabProps) {
             {/* Loss Reasons */}
             {m.lossReasons.length > 0 && (
                 <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: "20px 22px" }}>
-                    <SectionTitle>Motivos de Perda — Últimas 4 Semanas</SectionTitle>
+                    <SectionTitle metricKey="lossReasons">Motivos de Perda — Últimas 4 Semanas</SectionTitle>
                     <ResponsiveContainer width="100%" height={240}>
                         <BarChart data={m.lossReasons} layout="vertical" margin={{ top: 4, right: 50, bottom: 4, left: 130 }}>
                             <CartesianGrid strokeDasharray="3 3" stroke={T.border} horizontal={false} />
@@ -89,7 +89,7 @@ export function CloserTab({ m }: CloserTabProps) {
 
             {/* Cohort Analysis */}
             <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: "20px 22px" }}>
-                <SectionTitle tag={m.coh1.rate < 20 ? "🔴 CRÍTICO" : "🟢 NORMAL"}>Análise de Cohort</SectionTitle>
+                <SectionTitle tag={m.coh1.rate < 20 ? "🔴 CRÍTICO" : "🟢 NORMAL"} metricKey="cohorts">Análise de Cohort</SectionTitle>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
                     {[
                         { label: "Cohort Atual (14–28 dias atrás)", c: m.coh1 },

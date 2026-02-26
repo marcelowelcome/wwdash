@@ -1,13 +1,15 @@
 "use client";
 
 import { T } from "./theme";
+import { MetricHelper } from "./MetricHelper";
 
 interface SectionTitleProps {
     children: React.ReactNode;
     tag?: string;
+    metricKey?: string;
 }
 
-export function SectionTitle({ children, tag }: SectionTitleProps) {
+export function SectionTitle({ children, tag, metricKey }: SectionTitleProps) {
     const isCritical = tag?.includes("CRÍTICO");
     const isWarning = tag?.includes("ATENÇÃO");
 
@@ -31,9 +33,12 @@ export function SectionTitle({ children, tag }: SectionTitleProps) {
                     color: T.white,
                     letterSpacing: "0.06em",
                     textTransform: "uppercase",
+                    display: "flex",
+                    alignItems: "center"
                 }}
             >
                 {children}
+                {metricKey && <MetricHelper metricKey={metricKey} />}
             </span>
             {tag && (
                 <span

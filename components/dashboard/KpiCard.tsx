@@ -2,6 +2,7 @@
 
 import { T, statusColor, statusIcon } from "./theme";
 import { type Status } from "@/lib/schemas";
+import { MetricHelper } from "./MetricHelper";
 
 interface KpiCardProps {
     label: string;
@@ -9,9 +10,10 @@ interface KpiCardProps {
     sub?: string;
     status: Status;
     delta?: string;
+    metricKey?: string;
 }
 
-export function KpiCard({ label, value, sub, status, delta }: KpiCardProps) {
+export function KpiCard({ label, value, sub, status, delta, metricKey }: KpiCardProps) {
     const c = statusColor(status);
     return (
         <div
@@ -45,9 +47,12 @@ export function KpiCard({ label, value, sub, status, delta }: KpiCardProps) {
                     textTransform: "uppercase",
                     fontWeight: 600,
                     marginBottom: 8,
+                    display: "flex",
+                    alignItems: "center"
                 }}
             >
                 {label}
+                {metricKey && <MetricHelper metricKey={metricKey} />}
             </div>
             <div
                 style={{
