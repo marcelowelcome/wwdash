@@ -2,8 +2,8 @@ import { supabase } from "./supabase";
 import { type Deal } from "./schemas";
 
 // ─── CONFIG ────────────────────────────────────────────────────────────────────
-export const SDR_PIPELINE = "SDR Weddings";
-export const CLOSER_PIPELINE = "Closer Weddings";
+export const SDR_GROUP_ID = "1";
+export const CLOSER_GROUP_ID = "8";
 export const TRAINING_MOTIVE = "Para closer ter mais reuniões";
 
 // Internal IDs for field mapping (since we don't have AC field IDs)
@@ -12,9 +12,11 @@ const FL_ID = "custom_field_loss";
 
 /**
  * Fetches deals from Supabase and transforms them into the Deal schema.
+ * @param groupId The ID of the group (e.g., '1' for SDR Weddings, '8' for Closer Weddings)
+ * @param daysBack How many days back to fetch data
  */
 export async function fetchAllDealsFromDb(
-    pipeline: string,
+    groupId: string,
     daysBack = 180
 ): Promise<Deal[]> {
     const after = new Date();
@@ -24,12 +26,12 @@ export async function fetchAllDealsFromDb(
     const { data, error } = await supabase
         .from("deals")
         .select("*")
-        .eq("pipeline", pipeline)
+        .eq("group_id", groupId)
         .gte("created_at", afterStr)
         .order("created_at", { ascending: false });
 
     if (error) {
-        console.error(`[fetchAllDealsFromDb] Error fetching from ${pipeline}:`, error);
+        console.error(`[fetchAllDealsFromDb] Error fetching from group ${groupId}:`, error);
         return [];
     }
 
@@ -47,6 +49,10 @@ export async function fetchAllDealsFromDb(
             mdate: row.updated_at || undefined,
             status: statusMap[row.status] || "1",
             stage: row.stage || "Padrão",
+            group_id: row.group_id,
+            stage_id: row.stage_id,
+            owner_id: row.owner_id,
+            data_fechamento: row.data_fechamento,
             _cf: {
                 [FQ_ID]: row.motivos_qualificacao_sdr || "",
                 [FL_ID]: row.motivo_perda || ""

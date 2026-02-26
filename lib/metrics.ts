@@ -81,6 +81,16 @@ export function computeMetrics(
     const qualStatus: Status =
         qualRate < 8 || qualRate > 20 ? "red" : qualRate >= 10 ? "green" : "orange";
 
+    // ── CLOSER HELPER: Deal Resolution ──────────────────────────────────────────
+    // A deal is only officially Won if it has data_fechamento.
+    // If it is marked as Won (0) but has no data_fechamento, we treat it as Open (1).
+    const getCloserStatus = (d: Deal) => {
+        if (d.status === "0" && !d.data_fechamento) {
+            return "1"; // Treat as Open
+        }
+        return d.status;
+    };
+
     // ── CLOSER 4-WEEK ROLLING CONVERSION ───────────────────────────────────────
     const mm4s = daysAgo(28);
     const mm4e = today;
@@ -90,20 +100,20 @@ export function computeMetrics(
     const wonInPeriod = (s: Date, e: Date) =>
         closer.filter((d) => {
             const md = parseDate(d.mdate || d.cdate);
-            return d.status === "0" && inRange(md, s, e);
+            return getCloserStatus(d) === "0" && inRange(md, s, e);
         });
 
     const lostInPeriod = (s: Date, e: Date) =>
         closer.filter((d) => {
             const md = parseDate(d.mdate || d.cdate);
-            return d.status === "2" && inRange(md, s, e);
+            return getCloserStatus(d) === "2" && inRange(md, s, e);
         });
 
     const won_curr = wonInPeriod(mm4s, mm4e);
     const lost_curr = lostInPeriod(mm4s, mm4e);
     const open_curr = closer.filter((d) => {
         const cd = parseDate(d.cdate);
-        return d.status === "1" && inRange(cd, mm4s, mm4e);
+        return getCloserStatus(d) === "1" && inRange(cd, mm4s, mm4e);
     });
 
     const conv_curr =
@@ -123,9 +133,9 @@ export function computeMetrics(
 
     // ── HISTORICAL BENCHMARK ────────────────────────────────────────────────────
     const allDecided = closer.filter(
-        (d) => d.status === "0" || d.status === "2"
+        (d) => getCloserStatus(d) === "0" || getCloserStatus(d) === "2"
     );
-    const allWon = closer.filter((d) => d.status === "0");
+    const allWon = closer.filter((d) => getCloserStatus(d) === "0");
     const histRate =
         allDecided.length > 0 ? (allWon.length / allDecided.length) * 100 : 0;
 
@@ -133,7 +143,7 @@ export function computeMetrics(
     const enteredMM4 = closer.filter((d) =>
         inRange(parseDate(d.cdate), mm4s, mm4e)
     );
-    const decidedMM4 = enteredMM4.filter((d) => d.status !== "1");
+    const decidedMM4 = enteredMM4.filter((d) => getCloserStatus(d) !== "1");
     const velocity =
         enteredMM4.length > 0
             ? (decidedMM4.length / enteredMM4.length) * 100
@@ -180,7 +190,7 @@ export function computeMetrics(
         }));
 
     // ── PIPELINE ACTIVE ─────────────────────────────────────────────────────────
-    const openDeals = closer.filter((d) => d.status === "1");
+    const openDeals = closer.filter((d) => getCloserStatus(d) === "1");
     const pipeByAge = [
         {
             label: "0–14 dias",
@@ -229,9 +239,9 @@ export function computeMetrics(
 
     const cohortStats = (cohort: Deal[]) => ({
         total: cohort.length,
-        won: cohort.filter((d) => d.status === "0").length,
-        lost: cohort.filter((d) => d.status === "2").length,
-        open: cohort.filter((d) => d.status === "1").length,
+        won: cohort.filter((d) => getCloserStatus(d) === "0").length,
+        lost: cohort.filter((d) => getCloserStatus(d) === "2").length,
+        open: cohort.filter((d) => getCloserStatus(d) === "1").length,
         rate: 0,
     });
 

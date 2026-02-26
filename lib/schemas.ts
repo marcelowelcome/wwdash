@@ -7,6 +7,10 @@ export const DealSchema = z.object({
     mdate: z.string().optional(),
     status: z.string(),
     stage: z.string(),
+    group_id: z.string().optional().nullable(),
+    stage_id: z.string().optional().nullable(),
+    owner_id: z.string().optional().nullable(),
+    data_fechamento: z.string().optional().nullable(),
     _cf: z.record(z.string(), z.string()).optional().default({}),
 });
 

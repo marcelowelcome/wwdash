@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
-import { fetchAllDealsFromDb, fetchFieldMetaFromDb, fetchStagesFromDb, SDR_PIPELINE, CLOSER_PIPELINE } from "@/lib/supabase-api";
+import { fetchAllDealsFromDb, fetchFieldMetaFromDb, fetchStagesFromDb, SDR_GROUP_ID, CLOSER_GROUP_ID } from "@/lib/supabase-api";
 import { computeMetrics, type Metrics } from "@/lib/metrics";
 import { T, statusColor } from "./dashboard/theme";
 import { OverviewTab } from "./dashboard/OverviewTab";
@@ -118,9 +118,9 @@ export default function Dashboard() {
                 fetchStagesFromDb(),
             ]);
             setLoadStep("Carregando leads SDR (últimos 90 dias)…");
-            const sdrDeals = await fetchAllDealsFromDb(SDR_PIPELINE, 90);
+            const sdrDeals = await fetchAllDealsFromDb(SDR_GROUP_ID, 90);
             setLoadStep("Carregando pipeline Closer (últimos 365 dias)…");
-            const closerDeals = await fetchAllDealsFromDb(CLOSER_PIPELINE, 365);
+            const closerDeals = await fetchAllDealsFromDb(CLOSER_GROUP_ID, 365);
             setLoadStep("Calculando métricas…");
             setMetrics(computeMetrics(sdrDeals, closerDeals, fieldMap, stageMap));
             setLastUpdate(new Date().toLocaleTimeString("pt-BR"));
