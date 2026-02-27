@@ -3,7 +3,7 @@ import { type Deal } from "./schemas";
 
 // ─── CONFIG ────────────────────────────────────────────────────────────────────
 export const SDR_GROUP_ID = "1";
-export const CLOSER_GROUP_ID = "8";
+export const CLOSER_GROUP_ID = "3";
 export const TRAINING_MOTIVE = "Para closer ter mais reuniões";
 
 // Internal IDs for field mapping (since we don't have AC field IDs)
@@ -24,19 +24,31 @@ export async function fetchAllDealsFromDb(
     after.setDate(after.getDate() - daysBack);
     const afterStr = after.toISOString();
 
-    const { data, error } = await supabase
-        .from("deals")
-        .select("*")
-        .eq("group_id", groupId)
-        .gte("created_at", afterStr)
-        .order("created_at", { ascending: false });
+    let allRows: any[] = [];
+    let from = 0;
+    const limit = 1000;
 
-    if (error) {
-        console.error(`[fetchAllDealsFromDb] Error fetching from group ${groupId}:`, error);
-        return [];
+    while (true) {
+        const { data, error } = await supabase
+            .from("deals")
+            .select("*")
+            .eq("group_id", groupId)
+            .gte("created_at", afterStr)
+            .order("created_at", { ascending: false })
+            .range(from, from + limit - 1);
+
+        if (error) {
+            console.error(`[fetchAllDealsFromDb] Error fetching from group ${groupId}:`, error);
+            break;
+        }
+        if (!data || data.length === 0) break;
+
+        allRows = allRows.concat(data);
+        if (data.length < limit) break;
+        from += limit;
     }
 
-    return (data || []).map((row) => {
+    return allRows.map((row) => {
         // Map status: Won -> "0", Open -> "1", Lost -> "2"
         const statusMap: Record<string, string> = {
             "Won": "0",
@@ -53,7 +65,7 @@ export async function fetchAllDealsFromDb(
             group_id: row.group_id,
             stage_id: row.stage_id,
             owner_id: row.owner_id,
-            data_fechamento: row.data_fechamento,
+            data_fechamento: row.ww_closer_data_hora_ganho || row.data_fechamento,
             destino: row.destino || null,
             data_reuniao_1: row.data_reuniao_1 || null,
             _cf: {
@@ -72,19 +84,30 @@ export async function fetchAllDealsFromDb(
  * These represent the "Casamentos em planejamento" and past won deals.
  */
 export async function fetchWonDealsFromDb(groupId: string): Promise<Deal[]> {
-    const { data, error } = await supabase
-        .from("deals")
-        .select("*")
-        .eq("group_id", groupId)
-        .not("data_fechamento", "is", null)
-        .order("data_fechamento", { ascending: false });
+    let allRows: any[] = [];
+    let from = 0;
+    const limit = 1000;
 
-    if (error) {
-        console.error(`[fetchWonDealsFromDb] Error fetching won deals:`, error);
-        return [];
+    while (true) {
+        const { data, error } = await supabase
+            .from("deals")
+            .select("*")
+            .or("data_fechamento.not.is.null,ww_closer_data_hora_ganho.not.is.null")
+            .order("created_at", { ascending: false })
+            .range(from, from + limit - 1);
+
+        if (error) {
+            console.error(`[fetchWonDealsFromDb] Error fetching won deals:`, error);
+            break;
+        }
+
+        if (!data || data.length === 0) break;
+        allRows = allRows.concat(data);
+        if (data.length < limit) break;
+        from += limit;
     }
 
-    return (data || []).map((row) => {
+    return allRows.map((row) => {
         const statusMap: Record<string, string> = {
             "Won": "0",
             "Open": "1",
@@ -100,7 +123,7 @@ export async function fetchWonDealsFromDb(groupId: string): Promise<Deal[]> {
             group_id: row.group_id,
             stage_id: row.stage_id,
             owner_id: row.owner_id,
-            data_fechamento: row.data_fechamento,
+            data_fechamento: row.ww_closer_data_hora_ganho || row.data_fechamento,
             destino: row.destino || null,
             data_reuniao_1: row.data_reuniao_1 || null,
             _cf: {

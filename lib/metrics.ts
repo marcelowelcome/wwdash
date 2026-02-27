@@ -1,6 +1,6 @@
 import { type Deal, type Status } from "./schemas";
 import { parseDate, daysSince, weekKey, inRange, daysAgo } from "./utils";
-import { TRAINING_MOTIVE, buildWeekLabel } from "./supabase-api";
+import { TRAINING_MOTIVE, buildWeekLabel, CLOSER_GROUP_ID } from "./supabase-api";
 
 // ─── METRICS COMPUTATION ───────────────────────────────────────────────────────
 /**
@@ -16,9 +16,22 @@ export function computeMetrics(
 ) {
     // ── STRICT PIPELINE ISOLATION ──
     const sdrDeals = rawSdrDeals.filter(d => d.group_id === "1");
-    // Closer uses group_id 8.
-    const closerDeals = rawCloserDeals.filter(d => d.group_id === "8");
-    const wonDeals = rawWonDeals.filter(d => d.group_id === "8");
+
+    // Closer performance universe: 
+    // We combine current Group 3 deals with all Won deals (even if moved to Group 4)
+    // to ensure conversion and velocity accurately reflect the Closer's results.
+    // Also filter out training deals globally.
+    const closerBase = rawCloserDeals.filter(d => d.group_id === CLOSER_GROUP_ID);
+    const closerDeals = closerBase.filter(d => (d._cf[fieldMap["Motivos de qualificação SDR"] || ""] || "") !== TRAINING_MOTIVE);
+
+    const closer = [...closerDeals];
+    rawWonDeals.forEach((wd: Deal) => {
+        const isTraining = (wd._cf[fieldMap["Motivos de qualificação SDR"] || ""] || "") === TRAINING_MOTIVE;
+        if (!isTraining && !closer.some(cd => cd.id === wd.id)) {
+            closer.push(wd);
+        }
+    });
+    const wonDeals = rawWonDeals; // Allow won deals from any group (planesat/planning/etc)
 
     const today = new Date();
     const FQ =
@@ -29,10 +42,7 @@ export function computeMetrics(
         fieldMap["Motivo de Perda"];
     const FD = fieldMap["Motivo Desqualificação SDR"];
 
-    // Exclude training/mock deals from the Closer pipeline
-    const closer = closerDeals.filter(
-        (d) => (d._cf[FQ] || "") !== TRAINING_MOTIVE
-    );
+
 
     // ── SDR WEEKLY HISTORY & VOLUME TREND ───────────────────────────────────────
     // Current week = last complete Mon–Sun
@@ -155,16 +165,22 @@ export function computeMetrics(
     const mm4prev_s = daysAgo(56);
     const mm4prev_e = daysAgo(28);
 
+    // Use data_fechamento for won deals, otherwise cdate/mdate
+    const getPerformanceDate = (d: Deal) => {
+        if (d.data_fechamento) return parseDate(d.data_fechamento);
+        return parseDate(d.mdate || d.cdate);
+    };
+
     const wonInPeriod = (s: Date, e: Date) =>
         closer.filter((d) => {
-            const md = parseDate(d.mdate || d.cdate);
-            return getCloserStatus(d) === "0" && inRange(md, s, e);
+            const date = getPerformanceDate(d);
+            return getCloserStatus(d) === "0" && date && inRange(date, s, e);
         });
 
     const lostInPeriod = (s: Date, e: Date) =>
         closer.filter((d) => {
-            const md = parseDate(d.mdate || d.cdate);
-            return getCloserStatus(d) === "2" && inRange(md, s, e);
+            const date = getPerformanceDate(d);
+            return getCloserStatus(d) === "2" && date && inRange(date, s, e);
         });
 
     const won_curr = wonInPeriod(mm4s, mm4e);
@@ -248,7 +264,8 @@ export function computeMetrics(
         }));
 
     // ── PIPELINE ACTIVE ─────────────────────────────────────────────────────────
-    const openDeals = closer.filter((d) => getCloserStatus(d) === "1");
+    // For the active pipeline snapshot, we only care about deals currently in Group 3
+    const openDeals = closerDeals.filter((d) => getCloserStatus(d) === "1");
     const pipeByAge = [
         {
             label: "0–14 dias",

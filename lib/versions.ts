@@ -7,6 +7,18 @@ export interface VersionEntry {
 
 export const VERSION_HISTORY: VersionEntry[] = [
     {
+        version: "1.4.0",
+        date: "2026-02-27",
+        description: "Correção da Lógica de Casamentos Ganhos e Pipeline Closer.",
+        changes: [
+            "Alteração do ID do pipeline Closer de 8 para 3.",
+            "Correção da inversão de status (Ganho vs Aberto) no script de sincronização.",
+            "Implementação da regra global de identificação de ganho via campo '[WW] [Closer] Data-Hora Ganho'.",
+            "Mapeamento direto do campo customizado 87 para persistência de data de fechamento.",
+            "Recarga total de 22.000+ deals para garantir integridade histórica.",
+        ],
+    },
+    {
         version: "1.3.0",
         date: "2026-02-27",
         description: "Revamp estrutural Aba SDR (Topo do Funil).",
