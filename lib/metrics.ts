@@ -8,12 +8,18 @@ import { TRAINING_MOTIVE, buildWeekLabel } from "./supabase-api";
  * Does not perform any side effects or API calls.
  */
 export function computeMetrics(
-    sdrDeals: Deal[],
-    closerDeals: Deal[],
-    wonDeals: Deal[],
+    rawSdrDeals: Deal[],
+    rawCloserDeals: Deal[],
+    rawWonDeals: Deal[],
     fieldMap: Record<string, string>,
     stageMap: Record<string, string>
 ) {
+    // ── STRICT PIPELINE ISOLATION ──
+    const sdrDeals = rawSdrDeals.filter(d => d.group_id === "1");
+    // Closer uses group_id 8.
+    const closerDeals = rawCloserDeals.filter(d => d.group_id === "8");
+    const wonDeals = rawWonDeals.filter(d => d.group_id === "8");
+
     const today = new Date();
     const FQ =
         fieldMap["Motivos de qualificação SDR"] ||

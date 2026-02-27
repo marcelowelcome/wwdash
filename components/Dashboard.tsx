@@ -122,7 +122,7 @@ export default function Dashboard() {
             setLoadStep("Carregando pipeline Closer (últimos 365 dias)…");
             const closerDeals = await fetchAllDealsFromDb(CLOSER_GROUP_ID, 365);
             setLoadStep("Carregando casamentos ganhos / planejamento…");
-            const wonDeals = await fetchWonDealsFromDb();
+            const wonDeals = await fetchWonDealsFromDb(CLOSER_GROUP_ID);
             setLoadStep("Calculando métricas…");
             setMetrics(computeMetrics(sdrDeals, closerDeals, wonDeals, fieldMap, stageMap));
             setLastUpdate(new Date().toLocaleTimeString("pt-BR"));

@@ -68,13 +68,14 @@ export async function fetchAllDealsFromDb(
 }
 
 /**
- * Fetches all deals that have been won (data_fechamento is not null), regardless of the group/pipeline.
+ * Fetches all deals that have been won (data_fechamento is not null) for a specific group.
  * These represent the "Casamentos em planejamento" and past won deals.
  */
-export async function fetchWonDealsFromDb(): Promise<Deal[]> {
+export async function fetchWonDealsFromDb(groupId: string): Promise<Deal[]> {
     const { data, error } = await supabase
         .from("deals")
         .select("*")
+        .eq("group_id", groupId)
         .not("data_fechamento", "is", null)
         .order("data_fechamento", { ascending: false });
 
