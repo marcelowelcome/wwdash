@@ -81,13 +81,13 @@ export function OverviewTab({ m }: OverviewTabProps) {
                 <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: "20px 22px" }}>
                     <SectionTitle tag={m.sdrStatus === "green" ? "🟢 SAUDÁVEL" : "🔴 CRÍTICO"} metricKey="sdrThisWeek">Volume SDR</SectionTitle>
                     <ResponsiveContainer width="100%" height={200}>
-                        <ComposedChart data={m.sdrWeeks} margin={{ top: 20, right: 4, bottom: 0, left: -20 }}>
+                        <ComposedChart data={m.sdrWeeklyHistory} margin={{ top: 20, right: 4, bottom: 0, left: -20 }}>
                             <CartesianGrid strokeDasharray="3 3" stroke={T.border} vertical={false} />
                             <XAxis dataKey="week" tick={{ fontSize: 9, fill: T.muted }} tickLine={false} axisLine={false} angle={-30} textAnchor="end" height={44} />
                             <YAxis tick={{ fontSize: 9, fill: T.muted }} tickLine={false} axisLine={false} />
                             <Tooltip content={<CustomTooltip />} />
                             <Bar dataKey="leads" name="Volume SDR" fill={T.berry} radius={[4, 4, 0, 0]} barSize={32} />
-                            <Line type="monotone" dataKey="mm4Avg" name="Média 4 sem" stroke={T.gold} strokeWidth={2.5} dot={false} />
+                            <Line type="monotone" dataKey="qualRate" name="Taxa Qual. (%)" stroke={T.gold} strokeWidth={2.5} dot={false} />
                         </ComposedChart>
                     </ResponsiveContainer>
                 </div>

@@ -7,6 +7,19 @@ export interface VersionEntry {
 
 export const VERSION_HISTORY: VersionEntry[] = [
     {
+        version: "1.3.0",
+        date: "2026-02-27",
+        description: "Revamp estrutural Aba SDR (Topo do Funil).",
+        changes: [
+            "Renomeação oficial da tab para 'SDR'.",
+            "Módulo 2.1: Cards de KPI otimizados com MM4 visível, no-show rate e qualificação com ruleset de alertas.",
+            "Módulo 2.2: Novo gráfico Híbrido exibindo Leads vs Engajados + Curva de Qualificação.",
+            "Módulo 2.3: Funil visual de 5 etapas com lógica estrita de pass-through.",
+            "Módulo 2.4: Painéis duplo de Motivos de Perda (Global vs Últimos 4 Meses com detecção de tendências).",
+            "Módulo 2.5: Acompanhamento mensal isolado de rejeição por Taxa de Serviço.",
+        ],
+    },
+    {
         version: "1.2.0",
         date: "2026-02-26",
         description: "Dicionário de Métricas e Auxiliares Visuais.",

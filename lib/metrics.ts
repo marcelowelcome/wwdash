@@ -28,31 +28,7 @@ export function computeMetrics(
         (d) => (d._cf[FQ] || "") !== TRAINING_MOTIVE
     );
 
-    // ── SDR VOLUME TREND ────────────────────────────────────────────────────────
-    const weekCounts: Record<string, number> = {};
-    sdrDeals.forEach((d) => {
-        const k = weekKey(d.cdate);
-        weekCounts[k] = (weekCounts[k] || 0) + 1;
-    });
-
-    const sdrWeeksKeys = Object.keys(weekCounts).sort();
-    const sdrWeeks = sdrWeeksKeys
-        .slice(-12)
-        .map((k, idx, arr) => {
-            // Find its global index to compute MM4 correctly across preceding 4 weeks
-            const globalIdx = sdrWeeksKeys.indexOf(k);
-            let mm4Total = 0;
-            let count = 0;
-            for (let i = 1; i <= 4; i++) {
-                if (globalIdx - i >= 0) {
-                    mm4Total += weekCounts[sdrWeeksKeys[globalIdx - i]];
-                    count++;
-                }
-            }
-            const avg = count > 0 ? mm4Total / count : 0;
-            return { week: buildWeekLabel(k), leads: weekCounts[k], key: k, mm4Avg: parseFloat(avg.toFixed(1)) };
-        });
-
+    // ── SDR WEEKLY HISTORY & VOLUME TREND ───────────────────────────────────────
     // Current week = last complete Mon–Sun
     const todayDay = today.getDay();
     const lastSunday = new Date(today);
@@ -61,6 +37,36 @@ export function computeMetrics(
     lastMonday.setDate(lastSunday.getDate() - 6);
     lastMonday.setHours(0, 0, 0, 0);
     lastSunday.setHours(23, 59, 59, 999);
+
+    const weekCounts: Record<string, { received: number, engaged: number, qualified: number }> = {};
+    sdrDeals.forEach((d) => {
+        const k = weekKey(d.cdate);
+        if (!weekCounts[k]) weekCounts[k] = { received: 0, engaged: 0, qualified: 0 };
+        weekCounts[k].received++;
+        if (d.stage !== "StandBy") {
+            weekCounts[k].engaged++;
+        }
+    });
+    closer.forEach(d => {
+        const k = weekKey(d.cdate); // using creation date of the closer deal
+        if (weekCounts[k]) {
+            weekCounts[k].qualified++;
+        }
+    });
+
+    const sdrWeeksKeys = Object.keys(weekCounts).sort();
+    const sdrWeeklyHistory = sdrWeeksKeys
+        .slice(-12)
+        .map((k) => {
+            const data = weekCounts[k];
+            const qualRate = data.received > 0 ? (data.qualified / data.received) * 100 : 0;
+            return {
+                week: buildWeekLabel(k),
+                leads: data.received,
+                engaged: data.engaged,
+                qualRate: parseFloat(qualRate.toFixed(1)),
+            };
+        });
 
     const sdrThisWeek = sdrDeals.filter((d) =>
         inRange(parseDate(d.cdate), lastMonday, lastSunday)
@@ -88,13 +94,44 @@ export function computeMetrics(
     const sdrStatus: Status =
         sdrVsAvg >= 80 ? "green" : sdrVsAvg >= 60 ? "orange" : "red";
 
-    // ── SDR QUALIFICATION RATE ──────────────────────────────────────────────────
     const closerThisWeek = closer.filter((d) =>
         inRange(parseDate(d.cdate), lastMonday, lastSunday)
     ).length;
+
     const qualRate = sdrThisWeek > 0 ? (closerThisWeek / sdrThisWeek) * 100 : 0;
     const qualStatus: Status =
         qualRate < 8 || qualRate > 20 ? "red" : qualRate >= 10 ? "green" : "orange";
+
+    // ── SDR FUNNEL (ALL TIME) ───────────────────────────────────────────────────
+    const sdrReceived = sdrDeals.length;
+    const sdrEngagedDeals = sdrDeals.filter(d => d.stage !== "StandBy");
+    const sdrEngagedCount = sdrEngagedDeals.length;
+    const sdrDecidedDeals = sdrEngagedDeals.filter(d => d.status !== "1"); // not Open
+    const sdrDecidedCount = sdrDecidedDeals.length;
+    let taxaLost = 0;
+    sdrDecidedDeals.forEach(d => {
+        if (d.status === "2") {
+            const m = (FD ? d._cf[FD] : "").trim().toLowerCase();
+            if (m.includes("taxa") || m.includes("orçamento não condiz") || m.includes("não passou orçamento") || m.includes("15 convidados") || m.includes("pagar a viagem")) {
+                taxaLost++;
+            }
+        }
+    });
+    const sdrPassedTaxa = sdrDecidedCount - taxaLost;
+    const sdrQualified = closerDeals.length; // all deals that entered the Closer pipeline
+
+    const sdrFunnel = {
+        received: sdrReceived,
+        engaged: sdrEngagedCount,
+        decided: sdrDecidedCount,
+        passedTaxa: sdrPassedTaxa,
+        qualified: sdrQualified,
+        engagedPct: sdrReceived > 0 ? (sdrEngagedCount / sdrReceived) * 100 : 0,
+        decidedPct: sdrEngagedCount > 0 ? (sdrDecidedCount / sdrEngagedCount) * 100 : 0,
+        passedTaxaPct: sdrDecidedCount > 0 ? (sdrPassedTaxa / sdrDecidedCount) * 100 : 0,
+        qualifiedPctFromReceived: sdrReceived > 0 ? (sdrQualified / sdrReceived) * 100 : 0,
+    };
+
 
     // ── CLOSER HELPER: Deal Resolution ──────────────────────────────────────────
     // A deal is only officially Won if it has data_fechamento.
@@ -272,17 +309,10 @@ export function computeMetrics(
             : 0;
 
     // ── SDR QUAL WEEKS TREND ────────────────────────────────────────────────────
-    const sdrQualTrend = sdrWeeks.slice(-5).map((sw) => {
-        const wStart = new Date(sw.key);
-        const wEnd = new Date(sw.key);
-        wEnd.setDate(wEnd.getDate() + 7);
-        const closerInWeek = closer.filter((d) =>
-            inRange(parseDate(d.cdate), wStart, wEnd)
-        ).length;
-        const taxa =
-            sw.leads > 0 ? parseFloat(((closerInWeek / sw.leads) * 100).toFixed(1)) : 0;
-        return { week: sw.week, taxa };
-    });
+    const sdrQualTrend = sdrWeeklyHistory.slice(-5).map((sw) => ({
+        week: sw.week,
+        qualRate: sw.qualRate
+    }));
 
     const staleDealsPct =
         openDeals.filter((d) => daysSince(parseDate(d.cdate)) > 60).length /
@@ -387,20 +417,87 @@ export function computeMetrics(
                 : 0,
         }));
 
+    // ── SDR NEW LOSS PANELS ─────────────────────────────────────────────────
+    // History Panel (all time minus non-engaged) vs Recent Panel (last 120 days)
+    const histLostDeals = sdrDeals.filter(d => d.stage !== "StandBy" && d.status === "2");
+    const threshold120 = daysAgo(120);
+    const recentLostDeals = histLostDeals.filter(d => {
+        const cd = parseDate(d.cdate);
+        return cd ? cd >= threshold120 : false;
+    });
+
+    const getLossRanking = (deals: Deal[]) => {
+        const map: Record<string, number> = {};
+        deals.forEach(d => {
+            const m = (FD ? d._cf[FD] : "").trim() || "Outros";
+            const norm = m.toLowerCase().includes("taxa") ? "Taxa de Serviço" :
+                m.toLowerCase().includes("fake") ? "Lead Fake" :
+                    m.toLowerCase().includes("interesse") ? "Sem Interesse" :
+                        m.toLowerCase().includes("informações") ? "Informações Erradas" :
+                            m.toLowerCase().includes("nc com closer") ? "NC com Closer" :
+                                m.toLowerCase().includes("duplicado") ? "Lead Duplicado" :
+                                    m.toLowerCase().includes("destino") ? "Quer destino" : "Outros";
+            map[norm] = (map[norm] || 0) + 1;
+        });
+        const total = deals.length || 1;
+        return Object.entries(map)
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 6)
+            .map(([motivo, n]) => ({
+                motivo,
+                n,
+                pct: parseFloat(((n / total) * 100).toFixed(1)),
+            }));
+    };
+
+    const sdrLossPanels = {
+        histLoss: getLossRanking(histLostDeals),
+        recentLoss: getLossRanking(recentLostDeals),
+    };
+
+    // ── SDR TAXA DE SERVIÇO MONTHLY TREND ───────────────────────────────────
+    const monthStats: Record<string, { lostTotal: number, taxaTotal: number }> = {};
+    histLostDeals.forEach(d => {
+        const cd = parseDate(d.cdate);
+        if (!cd) return;
+        const mKey = `${cd.getFullYear()}-${String(cd.getMonth() + 1).padStart(2, "0")}`;
+        if (!monthStats[mKey]) monthStats[mKey] = { lostTotal: 0, taxaTotal: 0 };
+        monthStats[mKey].lostTotal++;
+        const m = (FD ? d._cf[FD] : "").trim().toLowerCase();
+        if (m.includes("taxa")) {
+            monthStats[mKey].taxaTotal++;
+        }
+    });
+    const sdrTaxaTrend = Object.keys(monthStats)
+        .sort()
+        .slice(-8)
+        .map(k => {
+            const data = monthStats[k];
+            const [y, m] = k.split("-");
+            const mapMonths = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
+            return {
+                month: `${mapMonths[parseInt(m, 10) - 1]}/${y.slice(2)}`,
+                rate: data.lostTotal > 0 ? parseFloat(((data.taxaTotal / data.lostTotal) * 100).toFixed(1)) : 0,
+            };
+        });
+
     return {
         sdrThisWeek,
         sdrAvg4: parseFloat(sdrAvg4.toFixed(1)),
         sdrVsAvg: parseFloat(sdrVsAvg.toFixed(1)),
         sdrStatus,
-        sdrWeeks,
+        sdrWeeklyHistory,
+        sdrFunnel,
         qualRate: parseFloat(qualRate.toFixed(1)),
         qualStatus,
         sdrQualTrend,
-        sdrLossReasons,
+        sdrLossReasons, // kept for backward compatibility if used elsewhere, but ideally remove if not needed
+        sdrLossPanels,
+        sdrTaxaTrend,
         sdrNoShowRate,
         sdrNoShowCount,
         sdrWithMeetingCount: sdrWithMeeting.length,
-        closerThisWeek,
+        closerThisWeek: closerThisWeek,
         conv_curr: parseFloat(conv_curr.toFixed(1)),
         conv_prev: parseFloat(conv_prev.toFixed(1)),
         convStatus,

@@ -145,7 +145,7 @@ computeMetrics(
 
 **Outputs esperados**
 
-- Objeto `Metrics` com: `sdrThisWeek`, `sdrAvg4`, `sdrVsAvg`, `sdrStatus`, `qualRate`, `qualStatus`, `conv_curr`, `conv_prev`, `convStatus`, `convTrend`, `histRate`, `velocity`, `velocityStatus`, `lossReasons`, `pipeByAge`, `pipeByStage`, `coh1`, `coh2`, `pipelineStatus`, etc.
+- Objeto `Metrics` com: `sdrThisWeek`, `sdrAvg4`, `sdrVsAvg`, `sdrStatus`, `qualRate`, `qualStatus`, `sdrWeeklyHistory`, `sdrFunnel`, `sdrQualTrend`, `sdrLossPanels`, `sdrTaxaTrend`, `sdrNoShowRate`, `sdrNoShowCount`, `sdrWithMeetingCount`, `conv_curr`, `conv_prev`, `convStatus`, `convTrend`, `histRate`, `velocity`, `velocityStatus`, `pipeByAge`, `pipeByStage`, `coh1`, `coh2`, `pipelineStatus`, etc.
 
 **Dependências que usa**
 
@@ -303,7 +303,7 @@ Primitivos visuais e views de tab que renderizam os dados do `Metrics` sem conte
 | `SectionTitle.tsx` | Cabeçalho de seção com badge de status colorido |
 | `CustomTooltip.tsx` | Tooltip de recharts com estilo da marca |
 | `OverviewTab.tsx` | Visão geral: KPIs, charts de volume e conversão, status grid |
-| `FunnelTab.tsx` | Topo do funil: volume SDR semanal, taxa de qualificação, funil atual |
+| `FunnelTab.tsx` | Aba SDR: 4 KPIs, Gráfico 12 Sem. Volume/Qualificação, Funil 5 Etapas, 2 Painéis de Perda (Global vs Recente) e Tendência Taxa Mensal |
 | `CloserTab.tsx` | Closer: conversão por janela, período atual, motivos de perda, cohorts |
 | `PipelineTab.tsx` | Pipeline: por estágio, por idade, projeção 7 dias |
 
