@@ -16,35 +16,50 @@ export function MetricHelper({ metricKey }: MetricHelperProps) {
     if (!def) return null;
 
     return (
-        <div className="relative inline-flex items-center ml-1.5 group">
+        <div style={{ position: "relative", display: "inline-flex", alignItems: "center", marginLeft: 6 }}>
             <Info
                 size={14}
-                className="cursor-help transition-colors"
-                style={{ color: show ? T.white : T.muted }}
+                style={{ color: show ? T.white : T.muted, cursor: "help", transition: "color 0.15s" }}
                 onMouseEnter={() => setShow(true)}
                 onMouseLeave={() => setShow(false)}
             />
 
             {show && (
                 <div
-                    className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-64 p-3 rounded-lg shadow-xl z-50 border pointer-events-none"
                     style={{
-                        backgroundColor: T.surface,
-                        borderColor: T.border,
+                        position: "absolute",
+                        bottom: "100%",
+                        left: "50%",
+                        transform: "translateX(-50%)",
+                        marginBottom: 8,
+                        width: 256,
+                        padding: 12,
+                        borderRadius: 8,
+                        boxShadow: "0 8px 24px rgba(0,0,0,0.4)",
+                        zIndex: 50,
+                        border: `1px solid ${T.border}`,
+                        pointerEvents: "none",
+                        background: T.surface,
                         color: T.white,
-                        fontSize: "0.75rem",
-                        lineHeight: "1.4"
+                        fontSize: 12,
+                        lineHeight: "1.4",
                     }}
                 >
-                    <div className="font-bold mb-1" style={{ color: T.rose }}>{def.label}</div>
-                    <p className="mb-2 opacity-90">{def.description}</p>
-                    <div className="grid grid-cols-2 gap-2 pt-2 border-t" style={{ borderColor: T.border }}>
+                    <div style={{ fontWeight: 700, marginBottom: 4, color: T.rose }}>{def.label}</div>
+                    <p style={{ marginBottom: 8, opacity: 0.9 }}>{def.description}</p>
+                    <div style={{
+                        display: "grid",
+                        gridTemplateColumns: "1fr 1fr",
+                        gap: 8,
+                        paddingTop: 8,
+                        borderTop: `1px solid ${T.border}`,
+                    }}>
                         <div>
-                            <span className="block opacity-50 uppercase text-[10px] font-bold">Origem</span>
+                            <span style={{ display: "block", opacity: 0.5, textTransform: "uppercase", fontSize: 10, fontWeight: 700 }}>Origem</span>
                             <span style={{ color: T.gold }}>{def.origin}</span>
                         </div>
                         <div>
-                            <span className="block opacity-50 uppercase text-[10px] font-bold">Tipo</span>
+                            <span style={{ display: "block", opacity: 0.5, textTransform: "uppercase", fontSize: 10, fontWeight: 700 }}>Tipo</span>
                             <span style={{ color: T.green }}>{def.type}</span>
                         </div>
                     </div>

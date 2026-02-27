@@ -10,6 +10,7 @@ import { TRAINING_MOTIVE, buildWeekLabel } from "./supabase-api";
 export function computeMetrics(
     sdrDeals: Deal[],
     closerDeals: Deal[],
+    wonDeals: Deal[],
     fieldMap: Record<string, string>,
     stageMap: Record<string, string>
 ) {
@@ -33,10 +34,23 @@ export function computeMetrics(
         weekCounts[k] = (weekCounts[k] || 0) + 1;
     });
 
-    const sdrWeeks = Object.entries(weekCounts)
-        .sort(([a], [b]) => a.localeCompare(b))
-        .slice(-9)
-        .map(([k, n]) => ({ week: buildWeekLabel(k), leads: n, key: k }));
+    const sdrWeeksKeys = Object.keys(weekCounts).sort();
+    const sdrWeeks = sdrWeeksKeys
+        .slice(-12)
+        .map((k, idx, arr) => {
+            // Find its global index to compute MM4 correctly across preceding 4 weeks
+            const globalIdx = sdrWeeksKeys.indexOf(k);
+            let mm4Total = 0;
+            let count = 0;
+            for (let i = 1; i <= 4; i++) {
+                if (globalIdx - i >= 0) {
+                    mm4Total += weekCounts[sdrWeeksKeys[globalIdx - i]];
+                    count++;
+                }
+            }
+            const avg = count > 0 ? mm4Total / count : 0;
+            return { week: buildWeekLabel(k), leads: weekCounts[k], key: k, mm4Avg: parseFloat(avg.toFixed(1)) };
+        });
 
     // Current week = last complete Mon–Sun
     const todayDay = today.getDay();
@@ -273,6 +287,54 @@ export function computeMetrics(
         openDeals.filter((d) => daysSince(parseDate(d.cdate)) > 60).length /
         (openDeals.length || 1);
 
+    // ── ACTIVE ALERTS ───────────────────────────────────────────────────────────
+    const activeAlerts: { type: Status; message: string; action?: string }[] = [];
+    const leadFakeCount = lost_curr.filter(d => (d._cf[FL] || "").toLowerCase().includes("lead fake")).length;
+    const leadFakePct = lost_curr.length > 0 ? (leadFakeCount / lost_curr.length) * 100 : 0;
+
+    if (leadFakePct >= 15) {
+        activeAlerts.push({
+            type: "red",
+            message: `Lead Fake: ${leadFakeCount} casos no período — ${leadFakePct.toFixed(0)}% das perdas.`,
+            action: "Verificar fonte dos leads."
+        });
+    }
+
+    if (qualRate < 8) {
+        activeAlerts.push({
+            type: "orange",
+            message: `Taxa de qualificação SDR abaixo de 8% no período atual.`,
+            action: "Avaliar abordagem do SDR."
+        });
+    }
+
+    // Contratos parados > 14 dias
+    const sentContractsList = openDeals.filter(d => {
+        const stageLabel = (stageMap[d.stage] || d.stage).toLowerCase();
+        return stageLabel.includes("contrato");
+    });
+    const contratosParados = sentContractsList.filter(d => daysSince(parseDate(d.mdate || d.cdate)) > 14).length;
+    const sentContractsCount = sentContractsList.length;
+
+    if (contratosParados > 0) {
+        activeAlerts.push({
+            type: "orange",
+            message: `${contratosParados} contratos enviados há mais de 14 dias sem retorno.`,
+            action: "Acionar follow-up."
+        });
+    }
+
+    if (activeAlerts.length === 0) {
+        activeAlerts.push({
+            type: "green",
+            message: "Nenhum alerta crítico ativo hoje. Funil operando dentro dos parâmetros normais."
+        });
+    }
+
+    // ── WEDDINGS IN PLANNING ────────────────────────────────────────────────────
+    const planActiveCount = wonDeals.filter(d => d.status !== "2").length;
+    const planCancelledCount = wonDeals.filter(d => d.status === "2").length;
+
     return {
         sdrThisWeek,
         sdrAvg4: parseFloat(sdrAvg4.toFixed(1)),
@@ -296,11 +358,15 @@ export function computeMetrics(
         enteredMM4: enteredMM4.length,
         lossReasons,
         openDeals: openDeals.length,
+        sentContractsCount,
+        planActiveCount,
+        planCancelledCount,
         pipeByAge,
         pipeByStage,
         coh1,
         coh2,
         pipelineStatus: (staleDealsPct > 0.3 ? "red" : "orange") as Status,
+        activeAlerts,
     };
 }
 

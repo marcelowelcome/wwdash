@@ -64,6 +64,47 @@ export async function fetchAllDealsFromDb(
 }
 
 /**
+ * Fetches all deals that have been won (data_fechamento is not null), regardless of the group/pipeline.
+ * These represent the "Casamentos em planejamento" and past won deals.
+ */
+export async function fetchWonDealsFromDb(): Promise<Deal[]> {
+    const { data, error } = await supabase
+        .from("deals")
+        .select("*")
+        .not("data_fechamento", "is", null)
+        .order("data_fechamento", { ascending: false });
+
+    if (error) {
+        console.error(`[fetchWonDealsFromDb] Error fetching won deals:`, error);
+        return [];
+    }
+
+    return (data || []).map((row) => {
+        const statusMap: Record<string, string> = {
+            "Won": "0",
+            "Open": "1",
+            "Lost": "2"
+        };
+
+        return {
+            id: String(row.id),
+            cdate: row.created_at,
+            mdate: row.updated_at || undefined,
+            status: statusMap[row.status] || "1",
+            stage: row.stage || "Padrão",
+            group_id: row.group_id,
+            stage_id: row.stage_id,
+            owner_id: row.owner_id,
+            data_fechamento: row.data_fechamento,
+            _cf: {
+                [FQ_ID]: row.motivos_qualificacao_sdr || "",
+                [FL_ID]: row.motivo_perda || ""
+            }
+        };
+    });
+}
+
+/**
  * Provides a mock field map that aligns with our internal Deal transformation.
  */
 export async function fetchFieldMetaFromDb(): Promise<Record<string, string>> {
@@ -76,17 +117,31 @@ export async function fetchFieldMetaFromDb(): Promise<Record<string, string>> {
 }
 
 /**
- * Provides a mock stage map. Since Supabase stores stage titles directly,
- * we can just map the title to itself.
+ * Fetches unique stage titles from the deals table and builds
+ * a mapping of stage → stage (identity map for Supabase data).
  */
 export async function fetchStagesFromDb(): Promise<Record<string, string>> {
-    // We could potentially fetch all unique stages from the DB if needed,
-    // but returning an empty map is also safe since computeMetrics
-    // falls back to the ID (which in our case IS the title string from row.stage).
-    return {};
+    const { data, error } = await supabase
+        .from("deals")
+        .select("stage")
+        .eq("status", "Open")
+        .not("stage", "is", null);
+
+    if (error) {
+        console.error("[fetchStagesFromDb] Error:", error);
+        return {};
+    }
+
+    const map: Record<string, string> = {};
+    (data || []).forEach((row) => {
+        if (row.stage) {
+            map[row.stage] = row.stage;
+        }
+    });
+    return map;
 }
 
-// Re-export buildWeekLabel since Dashboard.tsx might use it or computeMetrics imports it from ac-api
+// Re-export buildWeekLabel for use by computeMetrics
 export function buildWeekLabel(key: string): string {
     const dt = new Date(key);
     const end = new Date(dt);

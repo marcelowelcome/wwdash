@@ -1,7 +1,7 @@
 "use client";
 
 import {
-    AreaChart, Area, BarChart, Bar,
+    ComposedChart, Line, BarChart, Bar,
     XAxis, YAxis, CartesianGrid, Tooltip,
     ResponsiveContainer, ReferenceLine, Cell
 } from "recharts";
@@ -19,70 +19,76 @@ export function OverviewTab({ m }: OverviewTabProps) {
     return (
         <div style={{ display: "flex", flexDirection: "column", gap: 22 }}>
             {/* KPI Row */}
-            <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 14 }}>
                 <KpiCard
                     label="Leads SDR (sem.)"
                     value={m.sdrThisWeek}
-                    sub={`Média 4 sem: ${m.sdrAvg4}`}
                     status={m.sdrStatus}
-                    delta={`${m.sdrVsAvg > 100 ? "▲" : "▼"} ${m.sdrVsAvg.toFixed(0)}% vs média`}
+                    delta={`${m.sdrVsAvg > 100 ? "▲" : "▼"} ${Math.abs(m.sdrThisWeek - m.sdrAvg4).toFixed(0)} vs MM4s`}
                     metricKey="sdrThisWeek"
                 />
                 <KpiCard
-                    label="Taxa Qualificação SDR"
-                    value={`${m.qualRate}%`}
-                    sub="Range ideal: 10–15%"
-                    status={m.qualStatus}
-                    delta={m.qualRate < 10 ? "🔴 Restritiva" : m.qualRate > 20 ? "🔴 Alta demais" : "✓ Normal"}
-                    metricKey="qualRate"
+                    label="Média 4 sem (SDR)"
+                    value={m.sdrAvg4}
+                    sub="Linha de base"
+                    status="green"
+                    metricKey="sdrAvg4"
                 />
                 <KpiCard
                     label="Conversão Closer MM4s"
                     value={`${m.conv_curr}%`}
-                    sub={`Hist. calc: ${m.histRate}%`}
                     status={m.convStatus}
-                    delta={`${m.conv_curr > m.conv_prev ? "▲" : "▼"} ${Math.abs(m.conv_curr - m.conv_prev).toFixed(1)}pp vs anterior`}
+                    delta={`${m.conv_curr > m.histRate ? "▲" : "▼"} vs ${m.histRate}% bench`}
                     metricKey="conv_curr"
                 />
                 <KpiCard
-                    label="Velocity do Pipeline"
-                    value={`${m.velocity}%`}
-                    sub="Meta: >60%"
-                    status={m.velocityStatus}
-                    delta={m.velocity >= 60 ? "✓ Deals se movendo" : "🔴 Deals travados"}
-                    metricKey="velocity"
+                    label="Deals Closer em aberto"
+                    value={m.openDeals}
+                    sub={`${m.sentContractsCount} contratos enviados`}
+                    status={m.pipelineStatus}
+                    metricKey="openDeals"
                 />
                 <KpiCard
-                    label="Pipeline Ativo"
-                    value={m.openDeals}
-                    sub={`${m.pipeByStage[0]?.stage || "—"}: ${m.pipeByStage[0]?.n || 0}`}
-                    status={m.pipelineStatus}
-                    delta={`${m.won_curr} won · ${m.lost_curr} lost (4 sem)`}
-                    metricKey="pipelineStatus"
+                    label="Casamentos em plan."
+                    value={m.planActiveCount}
+                    sub={`${m.planCancelledCount} cancelamentos hist.`}
+                    status="green"
                 />
             </div>
+
+            {/* Alertas Ativos */}
+            {m.activeAlerts && m.activeAlerts.length > 0 && (
+                <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: "16px 22px" }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: T.white, marginBottom: 12, display: "flex", alignItems: "center", gap: 8 }}>
+                        ⚠ ALERTAS ATIVOS
+                    </div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                        {m.activeAlerts.map((alert, i) => (
+                            <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 12 }}>
+                                <span>{alert.type === "red" ? "🔴" : alert.type === "orange" ? "🟡" : "🟢"}</span>
+                                <span style={{ color: T.white }}>{alert.message}</span>
+                                {alert.action && (
+                                    <span style={{ color: T.gold, fontWeight: 600, marginLeft: 4 }}>— {alert.action}</span>
+                                )}
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
 
             {/* Charts Row */}
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 18 }}>
                 <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: "20px 22px" }}>
                     <SectionTitle tag={m.sdrStatus === "green" ? "🟢 SAUDÁVEL" : "🔴 CRÍTICO"} metricKey="sdrThisWeek">Volume SDR</SectionTitle>
                     <ResponsiveContainer width="100%" height={200}>
-                        <AreaChart data={m.sdrWeeks} margin={{ top: 4, right: 4, bottom: 0, left: -20 }}>
-                            <defs>
-                                <linearGradient id="sg" x1="0" y1="0" x2="0" y2="1">
-                                    <stop offset="5%" stopColor={T.gold} stopOpacity={0.3} />
-                                    <stop offset="95%" stopColor={T.gold} stopOpacity={0} />
-                                </linearGradient>
-                            </defs>
+                        <ComposedChart data={m.sdrWeeks} margin={{ top: 20, right: 4, bottom: 0, left: -20 }}>
                             <CartesianGrid strokeDasharray="3 3" stroke={T.border} vertical={false} />
                             <XAxis dataKey="week" tick={{ fontSize: 9, fill: T.muted }} tickLine={false} axisLine={false} angle={-30} textAnchor="end" height={44} />
                             <YAxis tick={{ fontSize: 9, fill: T.muted }} tickLine={false} axisLine={false} />
                             <Tooltip content={<CustomTooltip />} />
-                            {m.sdrAvg4 > 0 && (
-                                <ReferenceLine y={m.sdrAvg4} stroke={T.rose} strokeDasharray="4 4" label={{ value: `Média ${m.sdrAvg4}`, fill: T.rose, fontSize: 9, position: "insideTopLeft" }} />
-                            )}
-                            <Area type="monotone" dataKey="leads" name="Leads SDR" stroke={T.gold} fill="url(#sg)" strokeWidth={2.5} dot={{ r: 3, fill: T.gold }} />
-                        </AreaChart>
+                            <Bar dataKey="leads" name="Volume SDR" fill={T.berry} radius={[4, 4, 0, 0]} barSize={32} />
+                            <Line type="monotone" dataKey="mm4Avg" name="Média 4 sem" stroke={T.gold} strokeWidth={2.5} dot={false} />
+                        </ComposedChart>
                     </ResponsiveContainer>
                 </div>
 
@@ -108,26 +114,38 @@ export function OverviewTab({ m }: OverviewTabProps) {
                 </div>
             </div>
 
-            {/* Consolidated Status */}
+            {/* Snapshot do Pipeline Closer */}
             <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: "20px 22px" }}>
-                <SectionTitle>Status Consolidado do Funil</SectionTitle>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 10 }}>
-                    {[
-                        { label: "Leads SDR", status: m.sdrStatus, val: `${m.sdrThisWeek}` },
-                        { label: "Qualificação", status: m.qualStatus, val: `${m.qualRate}%` },
-                        { label: "Conversão", status: m.convStatus, val: `${m.conv_curr}%` },
-                        { label: "Velocity", status: m.velocityStatus, val: `${m.velocity}%` },
-                        { label: "Pipeline", status: m.pipelineStatus, val: `${m.openDeals} deals` },
-                    ].map((item, i) => (
+                <SectionTitle>Snapshot do Pipeline Closer</SectionTitle>
+                <div style={{ display: "flex", gap: 12, overflowX: "auto", paddingBottom: 8 }}>
+                    {m.pipeByStage.map((stageItem, i) => (
                         <div
                             key={i}
-                            style={{ background: T.surface, borderRadius: 10, border: `1px solid ${statusColor(item.status)}33`, padding: "14px", textAlign: "center" }}
+                            style={{
+                                flex: 1,
+                                minWidth: 140,
+                                background: T.surface,
+                                borderRadius: 10,
+                                border: `1px solid ${T.border}`,
+                                padding: "14px",
+                                textAlign: "center",
+                                display: "flex",
+                                flexDirection: "column",
+                                alignItems: "center",
+                                justifyContent: "center"
+                            }}
                         >
-                            <div style={{ fontSize: 22, color: statusColor(item.status), fontWeight: 800, fontFamily: "Georgia, serif" }}>{item.val}</div>
-                            <div style={{ fontSize: 10, color: T.muted, marginTop: 4, textTransform: "uppercase", letterSpacing: "0.06em" }}>{item.label}</div>
-                            <div style={{ marginTop: 6, fontSize: 16 }}>{item.status === "green" ? "🟢" : item.status === "orange" ? "🟡" : "🔴"}</div>
+                            <div style={{ fontSize: 11, color: T.muted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6, minHeight: 28, display: "flex", alignItems: "center" }}>
+                                {stageItem.stage}
+                            </div>
+                            <div style={{ fontSize: 22, color: T.gold, fontWeight: 800, fontFamily: "Georgia, serif" }}>
+                                {stageItem.n}
+                            </div>
                         </div>
                     ))}
+                    {m.pipeByStage.length === 0 && (
+                        <div style={{ fontSize: 13, color: T.muted, padding: "20px 0" }}>Nenhum negócio ativo no momento.</div>
+                    )}
                 </div>
             </div>
         </div>

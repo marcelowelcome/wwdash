@@ -97,5 +97,40 @@ export const METRIC_DEFINITIONS: Record<string, MetricDefinition> = {
         origin: "Regra de negócio",
         calculation: "Status fica vermelho se > 30% do pipeline tem 60+ dias.",
         type: "Cálculo",
-    }
+    },
+    openDeals: {
+        label: "Deals em Aberto",
+        description: "Total de negócios com status 'Open' no pipeline do Closer, excluindo treinamentos.",
+        origin: "Supabase (tabela deals, group_id = Closer)",
+        calculation: "Contagem de deals com status Open no pipeline Closer.",
+        type: "Automática",
+    },
+    planActiveCount: {
+        label: "Casamentos em Planejamento",
+        description: "Negócios ganhos (com data_fechamento) que ainda estão ativos (não cancelados).",
+        origin: "Supabase (tabela deals, data_fechamento não nulo)",
+        calculation: "Contagem de deals com data_fechamento e status ≠ Lost.",
+        type: "Automática",
+    },
+    planCancelledCount: {
+        label: "Cancelamentos Históricos",
+        description: "Negócios anteriormente ganhos que foram posteriormente cancelados (Lost).",
+        origin: "Supabase (tabela deals, data_fechamento não nulo)",
+        calculation: "Contagem de deals com data_fechamento e status = Lost.",
+        type: "Automática",
+    },
+    sentContractsCount: {
+        label: "Contratos Enviados",
+        description: "Negócios abertos cujo estágio contém a palavra 'contrato', indicando envio de proposta.",
+        origin: "Supabase (estágio do deal)",
+        calculation: "Filtragem por stage.includes('contrato') entre deals abertos.",
+        type: "Automática",
+    },
+    activeAlerts: {
+        label: "Alertas Ativos",
+        description: "Notificações automáticas sobre anomalias detectadas no funil (lead fake, qualificação baixa, contratos parados).",
+        origin: "Regras de negócio (metrics.ts)",
+        calculation: "Conjunto de regras: Lead Fake ≥ 15%, qualificação < 8%, contratos parados > 14 dias.",
+        type: "Cálculo",
+    },
 };
