@@ -21,6 +21,7 @@ export function computeMetrics(
     const FL =
         fieldMap["[WW] [Closer] Motivo de Perda"] ||
         fieldMap["Motivo de Perda"];
+    const FD = fieldMap["Motivo Desqualificação SDR"];
 
     // Exclude training/mock deals from the Closer pipeline
     const closer = closerDeals.filter(
@@ -335,6 +336,57 @@ export function computeMetrics(
     const planActiveCount = wonDeals.filter(d => d.status !== "2").length;
     const planCancelledCount = wonDeals.filter(d => d.status === "2").length;
 
+    // ── SDR LOSS / DISQUALIFICATION REASONS ─────────────────────────────────────────
+    const sdrLostDeals = sdrDeals.filter(d => d.status === "2");
+    const sdrLossMap: Record<string, number> = {};
+    sdrLostDeals.forEach(d => {
+        const reason = (FD ? d._cf[FD] : "") || "Não informado";
+        const trimmed = reason.trim();
+        if (trimmed) {
+            sdrLossMap[trimmed] = (sdrLossMap[trimmed] || 0) + 1;
+        }
+    });
+    const sdrLossReasons = Object.entries(sdrLossMap)
+        .sort(([, a], [, b]) => b - a)
+        .slice(0, 8)
+        .map(([motivo, n]) => ({
+            motivo: motivo.length > 25 ? motivo.slice(0, 23) + "…" : motivo,
+            n,
+            pct: parseFloat(((n / (sdrLostDeals.length || 1)) * 100).toFixed(1)),
+        }));
+
+    // ── SDR NO-SHOW RATE ────────────────────────────────────────────────────
+    const sdrWithMeeting = sdrDeals.filter(d => d.data_reuniao_1);
+    const sdrNoShowCount = sdrWithMeeting.filter(d => {
+        const meetingDate = parseDate(d.data_reuniao_1 || "");
+        return meetingDate && d.status === "2" && daysSince(meetingDate) > 0;
+    }).length;
+    const sdrNoShowRate = sdrWithMeeting.length > 0
+        ? parseFloat(((sdrNoShowCount / sdrWithMeeting.length) * 100).toFixed(1))
+        : 0;
+
+    // ── CLOSER DEALS BY DESTINATION ─────────────────────────────────────────
+    const destMap: Record<string, { total: number; won: number; lost: number; open: number }> = {};
+    closer.forEach(d => {
+        const dest = (d.destino || "Não informado").trim();
+        if (!destMap[dest]) destMap[dest] = { total: 0, won: 0, lost: 0, open: 0 };
+        destMap[dest].total++;
+        const st = getCloserStatus(d);
+        if (st === "0") destMap[dest].won++;
+        else if (st === "2") destMap[dest].lost++;
+        else destMap[dest].open++;
+    });
+    const dealsByDestination = Object.entries(destMap)
+        .sort(([, a], [, b]) => b.total - a.total)
+        .slice(0, 10)
+        .map(([destino, stats]) => ({
+            destino: destino.length > 20 ? destino.slice(0, 18) + "…" : destino,
+            ...stats,
+            rate: stats.won + stats.lost > 0
+                ? parseFloat(((stats.won / (stats.won + stats.lost)) * 100).toFixed(1))
+                : 0,
+        }));
+
     return {
         sdrThisWeek,
         sdrAvg4: parseFloat(sdrAvg4.toFixed(1)),
@@ -344,6 +396,10 @@ export function computeMetrics(
         qualRate: parseFloat(qualRate.toFixed(1)),
         qualStatus,
         sdrQualTrend,
+        sdrLossReasons,
+        sdrNoShowRate,
+        sdrNoShowCount,
+        sdrWithMeetingCount: sdrWithMeeting.length,
         closerThisWeek,
         conv_curr: parseFloat(conv_curr.toFixed(1)),
         conv_prev: parseFloat(conv_prev.toFixed(1)),
@@ -367,6 +423,7 @@ export function computeMetrics(
         coh2,
         pipelineStatus: (staleDealsPct > 0.3 ? "red" : "orange") as Status,
         activeAlerts,
+        dealsByDestination,
     };
 }
 

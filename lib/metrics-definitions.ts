@@ -4,6 +4,8 @@ export interface MetricDefinition {
     origin: string;
     calculation: string;
     type: "Automática" | "Manual" | "Cálculo";
+    normalRange?: string;
+    alertRule?: string;
 }
 
 export const METRIC_DEFINITIONS: Record<string, MetricDefinition> = {
@@ -13,6 +15,7 @@ export const METRIC_DEFINITIONS: Record<string, MetricDefinition> = {
         origin: "Supabase (tabela deals_sdr)",
         calculation: "Contagem de leads com cdate dentro do intervalo da semana anterior.",
         type: "Automática",
+        normalRange: "Acima de 35 leads/semana",
     },
     sdrAvg4: {
         label: "Média SDR (4 sem)",
@@ -34,6 +37,8 @@ export const METRIC_DEFINITIONS: Record<string, MetricDefinition> = {
         origin: "Supabase (Cruzamento de pipelines)",
         calculation: "(Volume Closer Semana / Volume SDR Semana) * 100.",
         type: "Cálculo",
+        normalRange: "Acima de 8%",
+        alertRule: "🔴 Alerta se < 8% consistente nas últimas 2 semanas",
     },
     conv_curr: {
         label: "Conversão Closer (MM4)",
@@ -41,6 +46,8 @@ export const METRIC_DEFINITIONS: Record<string, MetricDefinition> = {
         origin: "Supabase (tabela deals_closer)",
         calculation: "(Ganhos / (Ganhos + Perdidos)) * 100.",
         type: "Automática",
+        normalRange: "Acima de 20%",
+        alertRule: "🔴 Crítico se < 20%; 🟡 Atenção se < 25%",
     },
     conv_prev: {
         label: "Conversão Anterior",
@@ -62,6 +69,8 @@ export const METRIC_DEFINITIONS: Record<string, MetricDefinition> = {
         origin: "Supabase / Cálculo",
         calculation: "(Decididos que entraram no MM4 / Total que entrou no MM4) * 100.",
         type: "Cálculo",
+        normalRange: "Acima de 80%",
+        alertRule: "🔴 Vermelho se < 60%; 🟡 Laranja se < 80%",
     },
     lossReasons: {
         label: "Motivos de Perda",
@@ -97,6 +106,8 @@ export const METRIC_DEFINITIONS: Record<string, MetricDefinition> = {
         origin: "Regra de negócio",
         calculation: "Status fica vermelho se > 30% do pipeline tem 60+ dias.",
         type: "Cálculo",
+        normalRange: "Abaixo de 30% estagnado",
+        alertRule: "🔴 Vermelho se > 30% estagnado",
     },
     openDeals: {
         label: "Deals em Aberto",
@@ -125,6 +136,7 @@ export const METRIC_DEFINITIONS: Record<string, MetricDefinition> = {
         origin: "Supabase (estágio do deal)",
         calculation: "Filtragem por stage.includes('contrato') entre deals abertos.",
         type: "Automática",
+        alertRule: "🟡 Alerta se houver contrato(s) enviado(s) > 14 dias sem andamento",
     },
     activeAlerts: {
         label: "Alertas Ativos",
@@ -132,5 +144,6 @@ export const METRIC_DEFINITIONS: Record<string, MetricDefinition> = {
         origin: "Regras de negócio (metrics.ts)",
         calculation: "Conjunto de regras: Lead Fake ≥ 15%, qualificação < 8%, contratos parados > 14 dias.",
         type: "Cálculo",
+        normalRange: "0 alertas críticos"
     },
 };

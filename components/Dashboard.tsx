@@ -15,7 +15,7 @@ type TabId = "overview" | "funnel" | "closer" | "pipeline" | "dictionary";
 
 const TABS: { id: TabId; label: string }[] = [
     { id: "overview", label: "Visão Geral" },
-    { id: "funnel", label: "Topo do Funil" },
+    { id: "funnel", label: "SDR" },
     { id: "closer", label: "Closer" },
     { id: "pipeline", label: "Pipeline" },
     { id: "dictionary", label: "Dicionário" },

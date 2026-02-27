@@ -11,6 +11,8 @@ export const DealSchema = z.object({
     stage_id: z.string().optional().nullable(),
     owner_id: z.string().optional().nullable(),
     data_fechamento: z.string().optional().nullable(),
+    destino: z.string().optional().nullable(),
+    data_reuniao_1: z.string().optional().nullable(),
     _cf: z.record(z.string(), z.string()).optional().default({}),
 });
 

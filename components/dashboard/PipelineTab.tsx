@@ -116,6 +116,23 @@ export function PipelineTab({ m }: PipelineTabProps) {
                     })()}
                 </div>
             </div>
+
+            {/* Casamentos em Planejamento */}
+            <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: "20px 22px" }}>
+                <SectionTitle metricKey="planActiveCount">Casamentos em Planejamento</SectionTitle>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+                    <div style={{ background: T.surface, borderRadius: 10, border: `1px solid ${T.green}44`, padding: "20px 22px", textAlign: "center" }}>
+                        <div style={{ fontSize: 10, color: T.muted, textTransform: "uppercase", letterSpacing: "0.05em", fontWeight: 600, marginBottom: 8 }}>ATIVOS</div>
+                        <div style={{ fontSize: 42, fontWeight: 800, color: T.green, fontFamily: "Georgia, serif" }}>{m.planActiveCount}</div>
+                        <div style={{ fontSize: 11, color: T.muted, marginTop: 4 }}>casamentos em andamento</div>
+                    </div>
+                    <div style={{ background: T.surface, borderRadius: 10, border: `1px solid ${T.red}44`, padding: "20px 22px", textAlign: "center" }}>
+                        <div style={{ fontSize: 10, color: T.muted, textTransform: "uppercase", letterSpacing: "0.05em", fontWeight: 600, marginBottom: 8 }}>CANCELAMENTOS</div>
+                        <div style={{ fontSize: 42, fontWeight: 800, color: m.planCancelledCount > 0 ? T.red : T.muted, fontFamily: "Georgia, serif" }}>{m.planCancelledCount}</div>
+                        <div style={{ fontSize: 11, color: T.muted, marginTop: 4 }}>cancelamentos históricos</div>
+                    </div>
+                </div>
+            </div>
         </div>
     );
 }

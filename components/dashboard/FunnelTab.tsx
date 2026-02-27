@@ -83,6 +83,49 @@ export function FunnelTab({ m }: FunnelTabProps) {
                     ))}
                 </div>
             </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 18 }}>
+                {/* SDR Loss Reasons */}
+                {m.sdrLossReasons.length > 0 && (
+                    <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: "20px 22px" }}>
+                        <SectionTitle metricKey="sdrLossReasons">Motivos de Perda / Desqualificação SDR</SectionTitle>
+                        <ResponsiveContainer width="100%" height={200}>
+                            <BarChart data={m.sdrLossReasons} layout="vertical" margin={{ top: 4, right: 50, bottom: 4, left: 110 }}>
+                                <CartesianGrid strokeDasharray="3 3" stroke={T.border} horizontal={false} />
+                                <XAxis type="number" tick={{ fontSize: 10, fill: T.muted }} tickLine={false} axisLine={false} tickFormatter={(v: number) => v + "%"} />
+                                <YAxis type="category" dataKey="motivo" tick={{ fontSize: 10, fill: T.muted }} tickLine={false} axisLine={false} width={105} />
+                                <Tooltip content={<CustomTooltip />} />
+                                <Bar dataKey="pct" name="Pct %" radius={[0, 3, 3, 0]} barSize={12} fill={T.orange} label={{ position: "right", fontSize: 10, fill: T.muted, formatter: (v: unknown) => `${v}%` }} />
+                            </BarChart>
+                        </ResponsiveContainer>
+                    </div>
+                )}
+
+                {/* No-Show Rate */}
+                <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: "20px 22px" }}>
+                    <SectionTitle>No-Show de Reunião SDR</SectionTitle>
+                    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, padding: "20px 0" }}>
+                        <div style={{ fontSize: 42, fontWeight: 800, color: m.sdrNoShowRate > 20 ? T.red : m.sdrNoShowRate > 10 ? T.orange : T.green, fontFamily: "Georgia, serif" }}>
+                            {m.sdrNoShowRate}%
+                        </div>
+                        <div style={{ fontSize: 12, color: T.muted }}>
+                            {m.sdrNoShowCount} no-shows de {m.sdrWithMeetingCount} agendados
+                        </div>
+                        <div style={{
+                            marginTop: 8,
+                            padding: "4px 12px",
+                            borderRadius: 20,
+                            fontSize: 10,
+                            fontWeight: 700,
+                            color: m.sdrNoShowRate > 20 ? T.red : m.sdrNoShowRate > 10 ? T.orange : T.green,
+                            background: `${m.sdrNoShowRate > 20 ? T.red : m.sdrNoShowRate > 10 ? T.orange : T.green}18`,
+                            border: `1px solid ${m.sdrNoShowRate > 20 ? T.red : m.sdrNoShowRate > 10 ? T.orange : T.green}44`,
+                        }}>
+                            {m.sdrNoShowRate > 20 ? "🔴 CRÍTICO" : m.sdrNoShowRate > 10 ? "🟡 ATENÇÃO" : "🟢 SAUDÁVEL"}
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
     );
 }

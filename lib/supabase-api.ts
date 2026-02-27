@@ -9,6 +9,7 @@ export const TRAINING_MOTIVE = "Para closer ter mais reuniões";
 // Internal IDs for field mapping (since we don't have AC field IDs)
 const FQ_ID = "custom_field_qual";
 const FL_ID = "custom_field_loss";
+const FD_ID = "custom_field_sdr_loss";
 
 /**
  * Fetches deals from Supabase and transforms them into the Deal schema.
@@ -53,9 +54,12 @@ export async function fetchAllDealsFromDb(
             stage_id: row.stage_id,
             owner_id: row.owner_id,
             data_fechamento: row.data_fechamento,
+            destino: row.destino || null,
+            data_reuniao_1: row.data_reuniao_1 || null,
             _cf: {
-                [FQ_ID]: row.motivos_qualificacao_sdr || "",
-                [FL_ID]: row.motivo_perda || ""
+                [FQ_ID]: row.motivos_qualificacao_sdr || row.motivos_de_qualifica_o_sdr || "",
+                [FL_ID]: row.motivo_perda || row.ww_closer_motivo_de_perda || "",
+                [FD_ID]: row.motivo_desqualifica_o_sdr || "",
             }
         };
 
@@ -96,9 +100,12 @@ export async function fetchWonDealsFromDb(): Promise<Deal[]> {
             stage_id: row.stage_id,
             owner_id: row.owner_id,
             data_fechamento: row.data_fechamento,
+            destino: row.destino || null,
+            data_reuniao_1: row.data_reuniao_1 || null,
             _cf: {
-                [FQ_ID]: row.motivos_qualificacao_sdr || "",
-                [FL_ID]: row.motivo_perda || ""
+                [FQ_ID]: row.motivos_qualificacao_sdr || row.motivos_de_qualifica_o_sdr || "",
+                [FL_ID]: row.motivo_perda || row.ww_closer_motivo_de_perda || "",
+                [FD_ID]: row.motivo_desqualifica_o_sdr || "",
             }
         };
     });
@@ -112,7 +119,8 @@ export async function fetchFieldMetaFromDb(): Promise<Record<string, string>> {
         "Motivos de qualificação SDR": FQ_ID,
         "Motivo de qualificação SDR": FQ_ID,
         "[WW] [Closer] Motivo de Perda": FL_ID,
-        "Motivo de Perda": FL_ID
+        "Motivo de Perda": FL_ID,
+        "Motivo Desqualificação SDR": FD_ID,
     };
 }
 
