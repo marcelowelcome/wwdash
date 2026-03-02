@@ -148,6 +148,37 @@ export function computeMetrics(
         qualifiedPctFromReceived: sdrReceived > 0 ? (sdrQualified / sdrReceived) * 100 : 0,
     };
 
+    // ── SDR FUNNEL (WEEKLY - LAST COMPLETE WEEK) ────────────────────────────────
+    const sdrWeeklyDeals = sdrDeals.filter(d => inRange(parseDate(d.cdate), lastMonday, lastSunday));
+    const sdrReceivedW = sdrWeeklyDeals.length;
+    const sdrEngagedWDeals = sdrWeeklyDeals.filter(d => d.stage !== "StandBy");
+    const sdrEngagedWCount = sdrEngagedWDeals.length;
+    const sdrDecidedWDeals = sdrEngagedWDeals.filter(d => d.status !== "1");
+    const sdrDecidedWCount = sdrDecidedWDeals.length;
+    let taxaLostW = 0;
+    sdrDecidedWDeals.forEach(d => {
+        if (d.status === "2") {
+            const m = (FD ? d._cf[FD] : "").trim().toLowerCase();
+            if (m.includes("taxa") || m.includes("orçamento")) {
+                taxaLostW++;
+            }
+        }
+    });
+    const sdrPassedTaxaW = sdrDecidedWCount - taxaLostW;
+    const sdrQualifiedW = closerDeals.filter(d => inRange(parseDate(d.cdate), lastMonday, lastSunday)).length;
+
+    const sdrFunnelWeekly = {
+        received: sdrReceivedW,
+        engaged: sdrEngagedWCount,
+        decided: sdrDecidedWCount,
+        passedTaxa: sdrPassedTaxaW,
+        qualified: sdrQualifiedW,
+        engagedPct: sdrReceivedW > 0 ? (sdrEngagedWCount / sdrReceivedW) * 100 : 0,
+        decidedPct: sdrEngagedWCount > 0 ? (sdrDecidedWCount / sdrEngagedWCount) * 100 : 0,
+        passedTaxaPct: sdrDecidedWCount > 0 ? (sdrPassedTaxaW / sdrDecidedWCount) * 100 : 0,
+        qualifiedPctFromReceived: sdrReceivedW > 0 ? (sdrQualifiedW / sdrReceivedW) * 100 : 0,
+    };
+
 
     // ── CLOSER HELPER: Deal Resolution ──────────────────────────────────────────
     // A deal is only officially Won if it has data_fechamento.
@@ -511,6 +542,7 @@ export function computeMetrics(
         sdrStatus,
         sdrWeeklyHistory,
         sdrFunnel,
+        sdrFunnelWeekly,
         qualRate: parseFloat(qualRate.toFixed(1)),
         qualStatus,
         sdrQualTrend,
