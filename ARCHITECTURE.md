@@ -43,7 +43,7 @@ Centralised colour palette (`T`) and `statusColor()` / `statusIcon()` helpers. S
 | File | Responsibility |
 |---|---|
 | `OverviewTab.tsx` | KPI row + SDR/Conversion charts + consolidated status grid |
-| `FunnelTab.tsx` | SDR volume trend, qualification rate chart, funnel of current week |
+| `FunnelTab.tsx` | Aba SDR: 4 KPIs sincronizados, Gráfico 12 Sem. Volume/Qualificação, Funil da última semana completa, Distribuição de Fontes, Motivos de Perda e Tendência Taxa Mensal |
 | `CloserTab.tsx` | 4-week conversion windows, period breakdown, loss reasons, cohort analysis |
 | `PipelineTab.tsx` | Pipeline by stage, by age, and 7-day projection |
 

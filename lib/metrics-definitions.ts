@@ -40,6 +40,20 @@ export const METRIC_DEFINITIONS: Record<string, MetricDefinition> = {
         normalRange: "Acima de 8%",
         alertRule: "🔴 Alerta se < 8% consistente nas últimas 2 semanas",
     },
+    sdrFunnelWeekly: {
+        label: "Funil SDR (Última Semana)",
+        description: "Detalhamento das etapas do funil SDR especificamente para a última semana completa.",
+        origin: "Cálculo (metrics.ts)",
+        calculation: "Filtro de deals criados na última semana e contagem por marcos (engajado, decidido, passou taxa, qualificado).",
+        type: "Cálculo",
+    },
+    sdrSourceBreakdown: {
+        label: "Principais Fontes",
+        description: "Distribuição dos leads SDR pelas fontes de origem mais frequentes.",
+        origin: "Campo 'WW | Fonte do lead' (AC 279)",
+        calculation: "Agrupamento e contagem por valor do campo de fonte.",
+        type: "Automática",
+    },
     conv_curr: {
         label: "Conversão Closer (MM4)",
         description: "Taxa de conversão de vendas (Ganhos vs Perdidos) nos últimos 28 dias.",

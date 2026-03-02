@@ -7,6 +7,18 @@ export interface VersionEntry {
 
 export const VERSION_HISTORY: VersionEntry[] = [
     {
+        version: "1.5.0",
+        date: "2026-03-02",
+        description: "Refinamento SDR: Funil Semanal e métricas sincronizadas.",
+        changes: [
+            "Funil SDR agora exibe a última semana completa por padrão.",
+            "Sincronização total entre cards de KPI e baldes do gráfico (início no domingo).",
+            "Incorporação de novos campos: Fonte do Lead, Qualificação SQL e Status de Taxa.",
+            "Anotação de picos históricos (Ago/24 e Jan/25) no gráfico de taxa de serviço.",
+            "Aumento da janela histórica de deals SDR para 180 dias.",
+        ],
+    },
+    {
         version: "1.4.0",
         date: "2026-02-27",
         description: "Correção da Lógica de Casamentos Ganhos e Pipeline Closer.",

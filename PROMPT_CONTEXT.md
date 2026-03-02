@@ -95,7 +95,7 @@ Buscar dados de deals diretamente do Supabase, mapeando as colunas do banco para
 
 - `fetchAllDealsFromDb(groupId: string, daysBack?: number)` — Filtra por group_id (SDR=1, Closer=3) e data de criação.
 - `fetchWonDealsFromDb(groupId: string)` — Busca globalmente deals ganhos (com data de fechamento), ignorando o groupId para garantir completude.
-- `fetchFieldMetaFromDb()` — Retorna mapa estático de labels para IDs internos.
+- `fetchFieldMetaFromDb()` — Retorna mapa estático de labels para IDs internos, incluindo novos campos SDR (Fonte, SQL, Taxas).
 - `fetchStagesFromDb()` — Retorna mapa de estágios (vazio, pois usa títulos do DB).
 
 **Outputs esperados**
@@ -167,9 +167,11 @@ computeMetrics(
 
 - "Closer Universe": Para métricas de performance (conversão, velocidade), combinamos deals do Grupo 3 com todos os ganhos globais, garantindo que deals movidos para "Planning" (Grupo 4) continuem sendo contados.
 - "Win Detection": Um deal é considerado ganho globalmente se possuir valor no campo `data_fechamento` (mapeado do AC Field 87).
+- "SDR Funnel Logic": Utiliza campos específicos (`Qualificado para SQL`, `Pagamento de Taxa`) para determinar pass-through entre etapas.
+- "Weekly Synchronization": KPIs e Gráficos compartilham a mesma lógica de janela temporal (semana completa iniciando no Domingo) para garantir consistência.
 - Temporalidade: `wonInPeriod` utiliza estritamente `data_fechamento` para agrupar as vitórias nas janelas MM4.
 - Deals de treinamento (motivo `TRAINING_MOTIVE`) são filtrados antes de qualquer cálculo do Closer.
-- "Semana atual" = última segunda a domingo completa (não a semana corrente incompleta).
+- "Semana atual" = última domingo a sábado completa (conforme visual do chart).
 - Períodos de 28 dias (MM4) são calculados a partir de `daysAgo(28)`.
 - Todos os valores percentuais são arredondados com `toFixed(1)` e `parseFloat` antes do retorno.
 
@@ -216,7 +218,7 @@ Funções genéricas de data math e merging de classes CSS, reutilizáveis em qu
 **Decisões técnicas já tomadas**
 
 - `daysSince` retorna `999` para `null` para que deals sem data caiam sempre no bucket "mais velho"
-- `weekKey` normaliza para a segunda-feira da semana para agrupar corretamente
+- `weekKey` normaliza para o **Domingo** da semana para agrupar corretamente conforme o calendário visual.
 
 ---
 
