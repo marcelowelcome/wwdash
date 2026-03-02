@@ -141,6 +141,20 @@ export function FunnelTab({ m }: FunnelTabProps) {
                 </div>
             </div>
 
+            {/* Bloco 2.3.1 — Fontes de Leads */}
+            <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: "20px 22px" }}>
+                <SectionTitle>Principais Fontes de Leads (Histórico)</SectionTitle>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 12, marginTop: 16 }}>
+                    {m.sdrSourceBreakdown.map((item, idx) => (
+                        <div key={idx} style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: "12px", textAlign: "center" }}>
+                            <div style={{ fontSize: 10, color: T.muted, textTransform: "uppercase", marginBottom: 4, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{item.fonte}</div>
+                            <div style={{ fontSize: 20, fontWeight: 700, color: T.white }}>{item.n}</div>
+                            <div style={{ fontSize: 11, color: T.orange }}>{item.pct}%</div>
+                        </div>
+                    ))}
+                </div>
+            </div>
+
             {/* Bloco 2.4 — Motivos de Perda SDR (2 painéis) */}
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 18 }}>
                 {/* Histórico Completo */}

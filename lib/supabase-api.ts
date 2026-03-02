@@ -10,6 +10,10 @@ export const TRAINING_MOTIVE = "Para closer ter mais reuniões";
 const FQ_ID = "custom_field_qual";
 const FL_ID = "custom_field_loss";
 const FD_ID = "custom_field_sdr_loss";
+const F_SOURCE_ID = "custom_field_source";
+const F_SQL_ID = "custom_field_sql";
+const F_TAX_SENT_ID = "custom_field_tax_sent";
+const F_TAX_PAID_ID = "custom_field_tax_paid";
 
 /**
  * Fetches deals from Supabase and transforms them into the Deal schema.
@@ -72,6 +76,10 @@ export async function fetchAllDealsFromDb(
                 [FQ_ID]: row.motivos_qualificacao_sdr || row.motivos_de_qualifica_o_sdr || "",
                 [FL_ID]: row.motivo_perda || row.ww_closer_motivo_de_perda || "",
                 [FD_ID]: row.motivo_desqualifica_o_sdr || "",
+                [F_SOURCE_ID]: row.ww_fonte_do_lead || "",
+                [F_SQL_ID]: row.qualificado_para_sql || "",
+                [F_TAX_SENT_ID]: String(row.enviado_pagamento_de_taxa || ""),
+                [F_TAX_PAID_ID]: String(row.pagamento_de_taxa || row.pagou_a_taxa || ""),
             }
         };
 
@@ -130,6 +138,10 @@ export async function fetchWonDealsFromDb(groupId: string): Promise<Deal[]> {
                 [FQ_ID]: row.motivos_qualificacao_sdr || row.motivos_de_qualifica_o_sdr || "",
                 [FL_ID]: row.motivo_perda || row.ww_closer_motivo_de_perda || "",
                 [FD_ID]: row.motivo_desqualifica_o_sdr || "",
+                [F_SOURCE_ID]: row.ww_fonte_do_lead || "",
+                [F_SQL_ID]: row.qualificado_para_sql || "",
+                [F_TAX_SENT_ID]: String(row.enviado_pagamento_de_taxa || ""),
+                [F_TAX_PAID_ID]: String(row.pagamento_de_taxa || row.pagou_a_taxa || ""),
             }
         };
     });
@@ -145,6 +157,10 @@ export async function fetchFieldMetaFromDb(): Promise<Record<string, string>> {
         "[WW] [Closer] Motivo de Perda": FL_ID,
         "Motivo de Perda": FL_ID,
         "Motivo Desqualificação SDR": FD_ID,
+        "SQL": F_SQL_ID,
+        "Taxa Enviada": F_TAX_SENT_ID,
+        "Taxa Paga": F_TAX_PAID_ID,
+        "Fonte": F_SOURCE_ID,
     };
 }
 

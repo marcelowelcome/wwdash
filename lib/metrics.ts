@@ -41,6 +41,10 @@ export function computeMetrics(
         fieldMap["[WW] [Closer] Motivo de Perda"] ||
         fieldMap["Motivo de Perda"];
     const FD = fieldMap["Motivo Desqualificação SDR"];
+    const FSQL = fieldMap["SQL"];
+    const FTAX_SENT = fieldMap["Taxa Enviada"];
+    const FTAX_PAID = fieldMap["Taxa Paga"];
+    const FSOURCE = fieldMap["Fonte"];
 
 
 
@@ -112,13 +116,21 @@ export function computeMetrics(
     sdrDecidedDeals.forEach(d => {
         if (d.status === "2") {
             const m = (FD ? d._cf[FD] : "").trim().toLowerCase();
-            if (m.includes("taxa") || m.includes("orçamento não condiz") || m.includes("não passou orçamento") || m.includes("15 convidados") || m.includes("pagar a viagem")) {
+            const taxPaid = FTAX_PAID ? d._cf[FTAX_PAID] : "";
+            const taxSent = FTAX_SENT ? d._cf[FTAX_SENT] : "";
+
+            // Refined "Passou da Taxa" logic: literal "Não" in taxPaid or "Sim" in taxSent
+            // but the briefing says "Taxa de Serviço" is a loss reason.
+            // If it's a loss reason, it's a decision.
+            if (m.includes("taxa") || m.includes("orçamento") || taxPaid.toLowerCase() === "não") {
                 taxaLost++;
             }
         }
     });
     const sdrPassedTaxa = sdrDecidedCount - taxaLost;
-    const sdrQualified = closerDeals.length; // all deals that entered the Closer pipeline
+
+    // Qualified -> SQL literal or entered Closer group
+    const sdrQualified = sdrDeals.filter(d => (FSQL ? (d._cf[FSQL] || "").toLowerCase() === "sim" : false)).length || closerDeals.length;
 
     const sdrFunnel = {
         received: sdrReceived,
@@ -143,13 +155,14 @@ export function computeMetrics(
     sdrDecidedWDeals.forEach(d => {
         if (d.status === "2") {
             const m = (FD ? d._cf[FD] : "").trim().toLowerCase();
-            if (m.includes("taxa") || m.includes("orçamento")) {
+            const taxPaid = FTAX_PAID ? d._cf[FTAX_PAID] : "";
+            if (m.includes("taxa") || m.includes("orçamento") || taxPaid.toLowerCase() === "não") {
                 taxaLostW++;
             }
         }
     });
     const sdrPassedTaxaW = sdrDecidedWCount - taxaLostW;
-    const sdrQualifiedW = closerDeals.filter(d => inRange(parseDate(d.cdate), lastMonday, lastSunday)).length;
+    const sdrQualifiedW = sdrWeeklyDeals.filter(d => (FSQL ? (d._cf[FSQL] || "").toLowerCase() === "sim" : false)).length || closerDeals.filter(d => inRange(parseDate(d.cdate), lastMonday, lastSunday)).length;
 
     const sdrFunnelWeekly = {
         received: sdrReceivedW,
@@ -519,6 +532,21 @@ export function computeMetrics(
             };
         });
 
+    // ── SDR SOURCE BREAKDOWN ────────────────────────────────────────────────
+    const sourceMap: Record<string, number> = {};
+    sdrDeals.forEach(d => {
+        const src = (FSOURCE ? d._cf[FSOURCE] : "") || "Outros";
+        sourceMap[src] = (sourceMap[src] || 0) + 1;
+    });
+    const sdrSourceBreakdown = Object.entries(sourceMap)
+        .sort(([, a], [, b]) => b - a)
+        .slice(0, 5)
+        .map(([fonte, n]) => ({
+            fonte,
+            n,
+            pct: parseFloat(((n / (sdrDeals.length || 1)) * 100).toFixed(1)),
+        }));
+
     return {
         sdrThisWeek,
         sdrAvg4: parseFloat(sdrAvg4.toFixed(1)),
@@ -533,6 +561,7 @@ export function computeMetrics(
         sdrLossReasons, // kept for backward compatibility if used elsewhere, but ideally remove if not needed
         sdrLossPanels,
         sdrTaxaTrend,
+        sdrSourceBreakdown,
         sdrNoShowRate,
         sdrNoShowCount,
         sdrWithMeetingCount: sdrWithMeeting.length,
