@@ -93,13 +93,15 @@ Buscar dados de deals diretamente do Supabase, mapeando as colunas do banco para
 
 **Inputs esperados**
 
-- `fetchAllDealsFromDb(pipeline: string, daysBack?: number)` — Filtra por pipeline ("SDR Weddings" ou "Closer Weddings") e data de criação.
+- `fetchAllDealsFromDb(groupId: string, daysBack?: number)` — Filtra por group_id (SDR=1, Closer=3) e data de criação.
+- `fetchWonDealsFromDb(groupId: string)` — Busca globalmente deals ganhos (com data de fechamento), ignorando o groupId para garantir completude.
 - `fetchFieldMetaFromDb()` — Retorna mapa estático de labels para IDs internos.
 - `fetchStagesFromDb()` — Retorna mapa de estágios (vazio, pois usa títulos do DB).
 
 **Outputs esperados**
 
 - `fetchAllDealsFromDb` → `Promise<Deal[]>` (mapeado de colunas SQL)
+- `fetchWonDealsFromDb` → `Promise<Deal[]>`
 - `fetchFieldMetaFromDb` → `Promise<Record<string, string>>`
 - `fetchStagesFromDb` → `Promise<Record<string, string>>`
 
@@ -107,7 +109,7 @@ Buscar dados de deals diretamente do Supabase, mapeando as colunas do banco para
 
 - `lib/supabase.ts` (cliente inicializado)
 - `lib/schemas.ts` (tipo `Deal`)
-- Constantes: `SDR_PIPELINE`, `CLOSER_PIPELINE`, `TRAINING_MOTIVE`
+- Constantes: `SDR_GROUP_ID`, `CLOSER_GROUP_ID`, `TRAINING_MOTIVE`
 
 **O que NÃO deve fazer**
 
@@ -137,7 +139,8 @@ Função pura `computeMetrics()` que transforma arrays de deals tipados em todos
 ```typescript
 computeMetrics(
   sdrDeals: Deal[],
-  closerDeals: Deal[],
+  closerDeals: Deal[], // Deals atualmente no Grupo 3
+  wonDeals: Deal[],    // Deals ganhos vindos de QUALQUER grupo (visto que movem para Planning)
   fieldMap: Record<string, string>,  // fieldLabel → fieldId
   stageMap: Record<string, string>   // stageId → stageTitle
 ): Metrics
@@ -162,10 +165,13 @@ computeMetrics(
 
 **Decisões técnicas já tomadas**
 
-- Deals de treinamento (motivo `TRAINING_MOTIVE`) são filtrados antes de qualquer cálculo do Closer
-- "Semana atual" = última segunda a domingo completa (não a semana corrente incompleta)
-- Períodos de 28 dias (MM4) são calculados a partir de `daysAgo(28)`
-- Todos os valores percentuais são arredondados com `toFixed(1)` e `parseFloat` antes do retorno
+- "Closer Universe": Para métricas de performance (conversão, velocidade), combinamos deals do Grupo 3 com todos os ganhos globais, garantindo que deals movidos para "Planning" (Grupo 4) continuem sendo contados.
+- "Win Detection": Um deal é considerado ganho globalmente se possuir valor no campo `data_fechamento` (mapeado do AC Field 87).
+- Temporalidade: `wonInPeriod` utiliza estritamente `data_fechamento` para agrupar as vitórias nas janelas MM4.
+- Deals de treinamento (motivo `TRAINING_MOTIVE`) são filtrados antes de qualquer cálculo do Closer.
+- "Semana atual" = última segunda a domingo completa (não a semana corrente incompleta).
+- Períodos de 28 dias (MM4) são calculados a partir de `daysAgo(28)`.
+- Todos os valores percentuais são arredondados com `toFixed(1)` e `parseFloat` antes do retorno.
 
 ---
 

@@ -118,7 +118,7 @@ export default function Dashboard() {
                 fetchStagesFromDb(),
             ]);
             setLoadStep("Carregando leads SDR (últimos 90 dias)…");
-            const sdrDeals = await fetchAllDealsFromDb(SDR_GROUP_ID, 90);
+            const sdrDeals = await fetchAllDealsFromDb(SDR_GROUP_ID, 180);
             setLoadStep("Carregando pipeline Closer (últimos 365 dias)…");
             const closerDeals = await fetchAllDealsFromDb(CLOSER_GROUP_ID, 365);
             setLoadStep("Carregando casamentos ganhos / planejamento…");

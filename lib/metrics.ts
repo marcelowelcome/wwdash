@@ -453,7 +453,7 @@ export function computeMetrics(
         const map: Record<string, number> = {};
         deals.forEach(d => {
             const m = (FD ? d._cf[FD] : "").trim() || "Outros";
-            const norm = m.toLowerCase().includes("taxa") ? "Taxa de Serviço" :
+            const norm = m.toLowerCase().includes("taxa") || m.toLowerCase().includes("orçamento") ? "Taxa de Serviço" :
                 m.toLowerCase().includes("fake") ? "Lead Fake" :
                     m.toLowerCase().includes("interesse") ? "Sem Interesse" :
                         m.toLowerCase().includes("informações") ? "Informações Erradas" :
