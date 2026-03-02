@@ -30,7 +30,7 @@ export const weekKey = (d: string): string => {
     dt.setHours(0, 0, 0, 0);
     const day = dt.getDay();
     const mon = new Date(dt);
-    mon.setDate(dt.getDate() - ((day + 6) % 7));
+    mon.setDate(dt.getDate() - day);
     return mon.toISOString().split("T")[0];
 };
 

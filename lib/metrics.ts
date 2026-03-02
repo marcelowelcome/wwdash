@@ -80,29 +80,18 @@ export function computeMetrics(
                 week: buildWeekLabel(k),
                 leads: data.received,
                 engaged: data.engaged,
+                qualified: data.qualified,
                 qualRate: parseFloat(qualRate.toFixed(1)),
             };
         });
 
-    const sdrThisWeek = sdrDeals.filter((d) =>
-        inRange(parseDate(d.cdate), lastMonday, lastSunday)
-    ).length;
+    // Get data for the current week from the history (the last entry)
+    const currentWeekData = sdrWeeklyHistory[sdrWeeklyHistory.length - 1] || { leads: 0, engaged: 0, qualRate: 0, qualified: 0 };
+    const sdrThisWeek = currentWeekData.leads;
+    const closerThisWeek = (currentWeekData as any).qualified || 0;
+    const qualRate = currentWeekData.qualRate;
 
-    const prev4weeks = sdrDeals.filter((d) => {
-        const cd = parseDate(d.cdate);
-        const from = daysAgo(56);
-        const to = new Date(lastMonday);
-        to.setDate(to.getDate() - 1);
-        return inRange(cd, from, to);
-    });
-
-    const weeklyVols: Record<string, number> = {};
-    prev4weeks.forEach((d) => {
-        const k = weekKey(d.cdate);
-        weeklyVols[k] = (weeklyVols[k] || 0) + 1;
-    });
-
-    const prev4arr = Object.values(weeklyVols).slice(-4);
+    const prev4arr = sdrWeeklyHistory.slice(-5, -1).map(h => h.leads);
     const sdrAvg4 = prev4arr.length
         ? prev4arr.reduce((a, b) => a + b, 0) / prev4arr.length
         : 0;
@@ -110,11 +99,6 @@ export function computeMetrics(
     const sdrStatus: Status =
         sdrVsAvg >= 80 ? "green" : sdrVsAvg >= 60 ? "orange" : "red";
 
-    const closerThisWeek = closer.filter((d) =>
-        inRange(parseDate(d.cdate), lastMonday, lastSunday)
-    ).length;
-
-    const qualRate = sdrThisWeek > 0 ? (closerThisWeek / sdrThisWeek) * 100 : 0;
     const qualStatus: Status =
         qualRate < 8 || qualRate > 20 ? "red" : qualRate >= 10 ? "green" : "orange";
 
