@@ -72,6 +72,8 @@ export async function fetchAllDealsFromDb(
             data_fechamento: row.ww_closer_data_hora_ganho || row.data_fechamento,
             destino: row.destino || null,
             data_reuniao_1: row.data_reuniao_1 || null,
+            como_foi_feita_a_1a_reuniao: row.como_foi_feita_a_1a_reuniao || null,
+            data_horario_agendamento_closer: row.data_horario_agendamento_with_the_closer || row.data_horario_agendamento_closer || null,
             _cf: {
                 [FQ_ID]: row.motivos_qualificacao_sdr || row.motivos_de_qualifica_o_sdr || "",
                 [FL_ID]: row.motivo_perda || row.ww_closer_motivo_de_perda || "",
@@ -134,6 +136,8 @@ export async function fetchWonDealsFromDb(groupId: string): Promise<Deal[]> {
             data_fechamento: row.ww_closer_data_hora_ganho || row.data_fechamento,
             destino: row.destino || null,
             data_reuniao_1: row.data_reuniao_1 || null,
+            como_foi_feita_a_1a_reuniao: row.como_foi_feita_a_1a_reuniao || null,
+            data_horario_agendamento_closer: row.data_horario_agendamento_with_the_closer || row.data_horario_agendamento_closer || null,
             _cf: {
                 [FQ_ID]: row.motivos_qualificacao_sdr || row.motivos_de_qualifica_o_sdr || "",
                 [FL_ID]: row.motivo_perda || row.ww_closer_motivo_de_perda || "",

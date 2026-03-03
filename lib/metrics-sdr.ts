@@ -55,13 +55,9 @@ export function computeSDRMetrics(
 ): SDRMetrics {
     const now = new Date();
 
-    // Field IDs based on requested labels
-    const F_AGEND_1 = fieldMap["Data e horário do agendamento da 1ª reunião"];
-    const F_COMO_REUNIAO = fieldMap["Como foi feita a 1ª reunião?"];
-    const F_QUAL_SQL = fieldMap["Qualificado para SQL"];
-    const F_MOTIVO_SDR = fieldMap["Motivos de qualificação SDR"];
-    const F_AGEND_CLOSER = fieldMap["Data e horário do agendamento com a Closer:"];
-    const F_MOTIVO_PERDA = fieldMap["Motivo de perda"];
+    // Internal IDs from supabase-api.ts
+    const F_SQL_ID = fieldMap["SQL"];
+    const FL_ID = fieldMap["Motivo de Perda"];
 
     // Date Ranges
     const getRange = (f: PeriodFilter) => {
@@ -88,7 +84,7 @@ export function computeSDRMetrics(
 
     // M2: Agendamentos SDR
     const agendados = dealsInPeriod.filter(d => {
-        const val = d._cf[F_AGEND_1] || "";
+        const val = d.data_reuniao_1 || "";
         return val !== "";
     }).length;
 
@@ -97,7 +93,7 @@ export function computeSDRMetrics(
 
     // M4: Reuniões Realizadas
     const reunioes = dealsInPeriod.filter(d => {
-        const val = (d._cf[F_COMO_REUNIAO] || "").toLowerCase();
+        const val = (d.como_foi_feita_a_1a_reuniao || "").toLowerCase();
         return val !== "" && val !== "não teve reunião";
     }).length;
 
@@ -105,13 +101,13 @@ export function computeSDRMetrics(
     const taxaComp = agendados > 0 ? (reunioes / agendados) * 100 : null;
 
     // M6: Qualificados SQL (Exclusively "Sim")
-    const qualificados = dealsInPeriod.filter(d => d._cf[F_QUAL_SQL] === "Sim").length;
+    const qualificados = dealsInPeriod.filter(d => d._cf[F_SQL_ID] === "Sim").length;
 
     // M7: Taxa Qualificação
     const taxaQual = reunioes > 0 ? (qualificados / reunioes) * 100 : null;
 
     // M8: Agendamentos Closer
-    const agCloser = dealsInPeriod.filter(d => d._cf[F_AGEND_CLOSER] !== "" && d._cf[F_AGEND_CLOSER] != null).length;
+    const agCloser = dealsInPeriod.filter(d => d.data_horario_agendamento_closer !== "" && d.data_horario_agendamento_closer != null).length;
 
     // M9: Taxa Agendamento Closer
     const taxaAgendCloser = qualificados > 0 ? (agCloser / qualificados) * 100 : null;
@@ -153,9 +149,9 @@ export function computeSDRMetrics(
         const mEnd = new Date(nextM.getTime() - 1);
 
         const mDeals = deals.filter(d => inRange(parseDate(d.cdate), mDate, mEnd));
-        const mAgend = mDeals.filter(d => d._cf[F_AGEND_1]).length;
+        const mAgend = mDeals.filter(d => d.data_reuniao_1).length;
         const mReun = mDeals.filter(d => {
-            const val = (d._cf[F_COMO_REUNIAO] || "").toLowerCase();
+            const val = (d.como_foi_feita_a_1a_reuniao || "").toLowerCase();
             return val !== "" && val !== "não teve reunião";
         }).length;
 
@@ -170,14 +166,14 @@ export function computeSDRMetrics(
     // Loss Reasons
     const nonEngagedMotive = "Não fez reunião com a SDR";
     const lostDealsAll = deals.filter(d => d.status === "2" || d.status === "lost");
-    const lostDealsInPeriod = dealsInPeriod.filter(d => (d.status === "2" || d.status === "lost") && d._cf[F_MOTIVO_PERDA] !== nonEngagedMotive);
+    const lostDealsInPeriod = dealsInPeriod.filter(d => (d.status === "2" || d.status === "lost") && d._cf[FL_ID] !== nonEngagedMotive);
 
-    const notEngagedCount = dealsInPeriod.filter(d => (d.status === "2" || d.status === "lost") && d._cf[F_MOTIVO_PERDA] === nonEngagedMotive).length;
+    const notEngagedCount = dealsInPeriod.filter(d => (d.status === "2" || d.status === "lost") && d._cf[FL_ID] === nonEngagedMotive).length;
 
     const getLossStats = (dealsList: Deal[]) => {
         const counts: Record<string, number> = {};
         dealsList.forEach(d => {
-            const m = d._cf[F_MOTIVO_PERDA] || "Outros";
+            const m = d._cf[FL_ID] || "Outros";
             counts[m] = (counts[m] || 0) + 1;
         });
         const total = dealsList.length || 1;
@@ -185,7 +181,7 @@ export function computeSDRMetrics(
     };
 
     const periodLoss = getLossStats(lostDealsInPeriod);
-    const histLoss = getLossStats(lostDealsAll.filter(d => d._cf[F_MOTIVO_PERDA] !== nonEngagedMotive));
+    const histLoss = getLossStats(lostDealsAll.filter(d => d._cf[FL_ID] !== nonEngagedMotive));
 
     const lossReasons = periodLoss.sort((a, b) => b.pct - a.pct).slice(0, 8).map(p => {
         const h = histLoss.find(x => x.motivo === p.motivo)?.pct || 0;
@@ -207,10 +203,10 @@ export function computeSDRMetrics(
 
     // Weekly checks for 0 cases
     const weekDeals = deals.filter(d => inRange(parseDate(d.cdate), currentMon, now));
-    const weekComoFEita = weekDeals.filter(d => d._cf[F_COMO_REUNIAO]).length;
+    const weekComoFEita = weekDeals.filter(d => d.como_foi_feita_a_1a_reuniao).length;
     if (weekComoFEita === 0 && weekDeals.length > 0) alerts.push({ level: "orange", message: "Campo de modalidade de reunião não preenchido esta semana — dado de comparecimento incompleto" });
 
-    const weekQual = weekDeals.filter(d => d._cf[F_QUAL_SQL] === "Sim").length;
+    const weekQual = weekDeals.filter(d => d._cf[F_SQL_ID] === "Sim").length;
     if (weekQual === 0 && weekDeals.length > 0) alerts.push({ level: "orange", message: "Nenhuma qualificação registrada esta semana" });
 
     if (taxaAgendCloser !== null && taxaAgendCloser < 35) alerts.push({ level: "orange", message: "Maioria dos leads qualificados sem reunião Closer agendada" });

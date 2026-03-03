@@ -11,7 +11,6 @@ import { PipelineTab } from "./dashboard/PipelineTab";
 import { DictionaryTab } from "./dashboard/DictionaryTab";
 import { ChangelogModal } from "./dashboard/ChangelogModal";
 import { CURRENT_VERSION } from "@/lib/versions";
-import { fetchDealsFromAC, fetchFieldMetaFromAC } from "@/lib/ac-api";
 import { type Deal } from "@/lib/schemas";
 
 type TabId = "overview" | "funnel" | "sdr" | "closer" | "pipeline" | "dictionary";
@@ -118,17 +117,15 @@ export default function Dashboard() {
         setError(null);
         try {
             setLoadStep("Configurando mapeamento de campos…");
-            const [fieldMap, stageMap, acMap] = await Promise.all([
+            const [fieldMap, stageMap] = await Promise.all([
                 fetchFieldMetaFromDb(),
                 fetchStagesFromDb(),
-                fetchFieldMetaFromAC()
             ]);
-            setAcFieldMap(acMap);
+            setAcFieldMap(fieldMap);
 
-            setLoadStep("Carregando leads SDR (Real-time)…");
-            // Pipeline 1 and 3 as requested for the new SDR tab
-            const sdrP1 = await fetchDealsFromAC("1");
-            const sdrP3 = await fetchDealsFromAC("3");
+            setLoadStep("Carregando leads SDR (últimos 180 dias)…");
+            const sdrP1 = await fetchAllDealsFromDb("1", 180);
+            const sdrP3 = await fetchAllDealsFromDb("3", 180);
             const combinedSdr = [...sdrP1, ...sdrP3];
             setSdrDeals(combinedSdr);
 
@@ -138,9 +135,7 @@ export default function Dashboard() {
             const wonDeals = await fetchWonDealsFromDb(CLOSER_GROUP_ID);
 
             setLoadStep("Calculando métricas…");
-            // Keep legacy computeMetrics for other tabs
-            const dbSdrDeals = await fetchAllDealsFromDb(SDR_GROUP_ID, 180);
-            setMetrics(computeMetrics(dbSdrDeals, closerDeals, wonDeals, fieldMap, stageMap));
+            setMetrics(computeMetrics(sdrP1, closerDeals, wonDeals, fieldMap, stageMap));
 
             setLastUpdate(new Date().toLocaleTimeString("pt-BR"));
         } catch (e) {

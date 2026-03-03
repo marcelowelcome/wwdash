@@ -13,6 +13,8 @@ export const DealSchema = z.object({
     data_fechamento: z.string().optional().nullable(),
     destino: z.string().optional().nullable(),
     data_reuniao_1: z.string().optional().nullable(),
+    como_foi_feita_a_1a_reuniao: z.string().optional().nullable(),
+    data_horario_agendamento_closer: z.string().optional().nullable(),
     _cf: z.record(z.string(), z.string()).optional().default({}),
 });
 
