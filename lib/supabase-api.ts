@@ -15,6 +15,18 @@ const F_SQL_ID = "custom_field_sql";
 const F_TAX_SENT_ID = "custom_field_tax_sent";
 const F_TAX_PAID_ID = "custom_field_tax_paid";
 
+function mapMeetingType(val: any): string | null {
+    if (!val) return null;
+    if (Array.isArray(val)) return val[0] || null;
+    return String(val);
+}
+
+function mapSql(val: any): string {
+    if (val === true) return "Sim";
+    if (val === false) return "Não";
+    return String(val || "");
+}
+
 /**
  * Fetches deals from Supabase and transforms them into the Deal schema.
  * @param groupId The ID of the group (e.g., '1' for SDR Weddings, '8' for Closer Weddings)
@@ -71,16 +83,16 @@ export async function fetchAllDealsFromDb(
             owner_id: row.owner_id,
             data_fechamento: row.ww_closer_data_hora_ganho || row.data_fechamento,
             destino: row.destino || null,
-            data_reuniao_1: row.data_e_hor_rio_do_agendamento_da_1_reuni_o || null,
-            como_foi_feita_a_1a_reuniao: row.como_foi_feita_a_1_reuni_o === true ? "Sim" : row.como_foi_feita_a_1_reuni_o === false ? "Não" : row.como_foi_feita_a_1_reuni_o || row.como_foi_feita_a_1a_reuni_o_sdr_trips || null,
-            data_horario_agendamento_closer: row.data_e_hor_rio_do_agendamento_com_a_closer || null,
+            data_reuniao_1: row.data_reuniao_1 || null,
+            como_foi_feita_a_1a_reuniao: mapMeetingType(row.como_reuniao_1),
+            data_horario_agendamento_closer: row.data_closer || null,
             _cf: {
-                [FQ_ID]: row.motivos_de_qualifica_o_sdr || row.motivos_qualificacao_sdr || "",
-                [FL_ID]: row.motivo_de_perda || row.ww_closer_motivo_de_perda || "",
+                [FQ_ID]: row.motivos_qualificacao_sdr || "",
+                [FL_ID]: row.ww_closer_motivo_de_perda || row.motivo_de_perda || "",
                 [FD_ID]: row.motivo_desqualifica_o_sdr || "",
                 [F_SOURCE_ID]: row.ww_fonte_do_lead || "",
-                [F_SQL_ID]: row.qualificado_para_sql || "",
-                [F_TAX_SENT_ID]: String(row.enviado_pagamento_de_taxa || ""),
+                [F_SQL_ID]: mapSql(row.qualificado_sql),
+                [F_TAX_SENT_ID]: String(row.wt_enviado_pagamento_de_taxa || ""),
                 [F_TAX_PAID_ID]: String(row.pagamento_de_taxa || row.pagou_a_taxa || ""),
             }
         };
@@ -91,7 +103,7 @@ export async function fetchAllDealsFromDb(
 
 /**
  * Fetches all deals that have been won (data_fechamento is not null) for a specific group.
- * These represent the "Casamentos em planejamento" and past won deals.
+ * These represent the "Casamentos em planning" and past won deals.
  */
 export async function fetchWonDealsFromDb(groupId: string): Promise<Deal[]> {
     let allRows: any[] = [];
@@ -135,16 +147,16 @@ export async function fetchWonDealsFromDb(groupId: string): Promise<Deal[]> {
             owner_id: row.owner_id,
             data_fechamento: row.ww_closer_data_hora_ganho || row.data_fechamento,
             destino: row.destino || null,
-            data_reuniao_1: row.data_e_hor_rio_do_agendamento_da_1_reuni_o || null,
-            como_foi_feita_a_1a_reuniao: row.como_foi_feita_a_1_reuni_o === true ? "Sim" : row.como_foi_feita_a_1_reuni_o === false ? "Não" : row.como_foi_feita_a_1_reuni_o || row.como_foi_feita_a_1a_reuni_o_sdr_trips || null,
-            data_horario_agendamento_closer: row.data_e_hor_rio_do_agendamento_com_a_closer || null,
+            data_reuniao_1: row.data_reuniao_1 || null,
+            como_foi_feita_a_1a_reuniao: mapMeetingType(row.como_reuniao_1),
+            data_horario_agendamento_closer: row.data_closer || null,
             _cf: {
-                [FQ_ID]: row.motivos_de_qualifica_o_sdr || row.motivos_qualificacao_sdr || "",
-                [FL_ID]: row.motivo_de_perda || row.ww_closer_motivo_de_perda || "",
+                [FQ_ID]: row.motivos_qualificacao_sdr || "",
+                [FL_ID]: row.ww_closer_motivo_de_perda || row.motivo_de_perda || "",
                 [FD_ID]: row.motivo_desqualifica_o_sdr || "",
                 [F_SOURCE_ID]: row.ww_fonte_do_lead || "",
-                [F_SQL_ID]: row.qualificado_para_sql || "",
-                [F_TAX_SENT_ID]: String(row.enviado_pagamento_de_taxa || ""),
+                [F_SQL_ID]: mapSql(row.qualificado_sql),
+                [F_TAX_SENT_ID]: String(row.wt_enviado_pagamento_de_taxa || ""),
                 [F_TAX_PAID_ID]: String(row.pagamento_de_taxa || row.pagou_a_taxa || ""),
             }
         };
