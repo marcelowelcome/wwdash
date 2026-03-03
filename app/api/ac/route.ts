@@ -9,20 +9,35 @@ const AC_KEY = process.env.AC_API_KEY ?? "";
 export async function GET(req: NextRequest) {
     const { searchParams } = req.nextUrl;
 
-    // Extract the `path` param (e.g. /deals) and forward the rest as-is
+    // Extract the `path` or `url` param
     const path = searchParams.get("path");
-    if (!path) {
-        return NextResponse.json({ error: "Missing `path` query param" }, { status: 400 });
+    const urlParam = searchParams.get("url");
+
+    if (!path && !urlParam) {
+        return NextResponse.json({ error: "Missing `path` or `url` query param" }, { status: 400 });
     }
 
-    // Re-build querystring WITHOUT the `path` param
+    // Determine the base URL and the target path
+    let upstreamBase = AC_BASE;
+    let targetPath = path || urlParam || "";
+
+    // If urlParam starts with /api/1 or /api/3, we adjust the base
+    if (targetPath.startsWith("/api/1")) {
+        upstreamBase = "https://welcometrips.api-us1.com/api/1";
+        targetPath = targetPath.replace("/api/1", "");
+    } else if (targetPath.startsWith("/api/3")) {
+        upstreamBase = "https://welcometrips.api-us1.com/api/3";
+        targetPath = targetPath.replace("/api/3", "");
+    }
+
+    // Re-build querystring WITHOUT the internal params
     const forwarded = new URLSearchParams();
     searchParams.forEach((value, key) => {
-        if (key !== "path") forwarded.append(key, value);
+        if (key !== "path" && key !== "url") forwarded.append(key, value);
     });
 
     const qs = forwarded.toString();
-    const upstream = `${AC_BASE}${path}${qs ? `?${qs}` : ""}`;
+    const upstream = `${upstreamBase}${targetPath}${qs ? `?${qs}` : ""}`;
 
     try {
         const res = await fetch(upstream, {
@@ -30,7 +45,6 @@ export async function GET(req: NextRequest) {
                 "Api-Token": AC_KEY,
                 "Content-Type": "application/json",
             },
-            // Respect Next.js fetch cache — disable for real-time data
             cache: "no-store",
         });
 

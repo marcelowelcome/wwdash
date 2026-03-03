@@ -5,17 +5,20 @@ import { computeMetrics, type Metrics } from "@/lib/metrics";
 import { T, statusColor } from "./dashboard/theme";
 import { OverviewTab } from "./dashboard/OverviewTab";
 import { FunnelTab } from "./dashboard/FunnelTab";
+import { SDRTab } from "./dashboard/SDRTab";
 import { CloserTab } from "./dashboard/CloserTab";
 import { PipelineTab } from "./dashboard/PipelineTab";
 import { DictionaryTab } from "./dashboard/DictionaryTab";
 import { ChangelogModal } from "./dashboard/ChangelogModal";
 import { CURRENT_VERSION } from "@/lib/versions";
+import { fetchDealsFromAC, fetchFieldMetaFromAC } from "@/lib/ac-api";
+import { type Deal } from "@/lib/schemas";
 
-type TabId = "overview" | "funnel" | "closer" | "pipeline" | "dictionary";
+type TabId = "overview" | "funnel" | "sdr" | "closer" | "pipeline" | "dictionary";
 
 const TABS: { id: TabId; label: string }[] = [
     { id: "overview", label: "Visão Geral" },
-    { id: "funnel", label: "SDR" },
+    { id: "sdr", label: "SDR" },
     { id: "closer", label: "Closer" },
     { id: "pipeline", label: "Pipeline" },
     { id: "dictionary", label: "Dicionário" },
@@ -104,7 +107,9 @@ export default function Dashboard() {
     const [loading, setLoading] = useState(true);
     const [loadStep, setLoadStep] = useState("Conectando ao banco de dados…");
     const [error, setError] = useState<{ type: string; msg: string } | null>(null);
-    const [metrics, setMetrics] = useState<Metrics | null>(null);
+    const [metrics, setMetrics] = useState<any | null>(null);
+    const [sdrDeals, setSdrDeals] = useState<Deal[]>([]);
+    const [acFieldMap, setAcFieldMap] = useState<Record<string, string>>({});
     const [lastUpdate, setLastUpdate] = useState<string | null>(null);
     const [isChangelogOpen, setIsChangelogOpen] = useState(false);
 
@@ -113,18 +118,30 @@ export default function Dashboard() {
         setError(null);
         try {
             setLoadStep("Configurando mapeamento de campos…");
-            const [fieldMap, stageMap] = await Promise.all([
+            const [fieldMap, stageMap, acMap] = await Promise.all([
                 fetchFieldMetaFromDb(),
                 fetchStagesFromDb(),
+                fetchFieldMetaFromAC()
             ]);
-            setLoadStep("Carregando leads SDR (últimos 90 dias)…");
-            const sdrDeals = await fetchAllDealsFromDb(SDR_GROUP_ID, 180);
+            setAcFieldMap(acMap);
+
+            setLoadStep("Carregando leads SDR (Real-time)…");
+            // Pipeline 1 and 3 as requested for the new SDR tab
+            const sdrP1 = await fetchDealsFromAC("1");
+            const sdrP3 = await fetchDealsFromAC("3");
+            const combinedSdr = [...sdrP1, ...sdrP3];
+            setSdrDeals(combinedSdr);
+
             setLoadStep("Carregando pipeline Closer (últimos 365 dias)…");
             const closerDeals = await fetchAllDealsFromDb(CLOSER_GROUP_ID, 365);
             setLoadStep("Carregando casamentos ganhos / planejamento…");
             const wonDeals = await fetchWonDealsFromDb(CLOSER_GROUP_ID);
+
             setLoadStep("Calculando métricas…");
-            setMetrics(computeMetrics(sdrDeals, closerDeals, wonDeals, fieldMap, stageMap));
+            // Keep legacy computeMetrics for other tabs
+            const dbSdrDeals = await fetchAllDealsFromDb(SDR_GROUP_ID, 180);
+            setMetrics(computeMetrics(dbSdrDeals, closerDeals, wonDeals, fieldMap, stageMap));
+
             setLastUpdate(new Date().toLocaleTimeString("pt-BR"));
         } catch (e) {
             const msg = e instanceof Error ? e.message : String(e);
@@ -197,6 +214,7 @@ export default function Dashboard() {
             <Header {...headerProps} />
             <div style={{ maxWidth: 1200, margin: "0 auto", padding: "24px 28px 48px" }}>
                 {tab === "overview" && <OverviewTab m={metrics} />}
+                {tab === "sdr" && <SDRTab deals={sdrDeals} fieldMap={acFieldMap} />}
                 {tab === "funnel" && <FunnelTab m={metrics} />}
                 {tab === "closer" && <CloserTab m={metrics} />}
                 {tab === "pipeline" && <PipelineTab m={metrics} />}
