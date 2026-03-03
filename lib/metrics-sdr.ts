@@ -94,7 +94,8 @@ export function computeSDRMetrics(
     // M4: Reuniões Realizadas
     const reunioes = dealsInPeriod.filter(d => {
         const val = (d.como_foi_feita_a_1a_reuniao || "").toLowerCase();
-        return val !== "" && val !== "não teve reunião";
+        // Handle boolean "Sim" or specific meeting types
+        return val !== "" && val !== "não teve reunião" && val !== "não";
     }).length;
 
     // M5: Taxa Comparecimento
@@ -118,7 +119,7 @@ export function computeSDRMetrics(
     const mm4sEnd = new Date(currentMon); mm4sEnd.setMilliseconds(-1);
 
     const dealsInMM4s = deals.filter(d => inRange(parseDate(d.cdate), mm4sStart, mm4sEnd));
-    const mm4sValue = dealsInMM4s.length / 4;
+    const mm4sValue = dealsInMM4s.length > 0 ? dealsInMM4s.length / 4 : 0;
 
     // weeklyVolume (12 weeks fixed)
     const weeklyVolume = [];
@@ -212,7 +213,7 @@ export function computeSDRMetrics(
     if (taxaAgendCloser !== null && taxaAgendCloser < 35) alerts.push({ level: "orange", message: "Maioria dos leads qualificados sem reunião Closer agendada" });
 
     return {
-        mqlThisWeek: deals.filter(d => inRange(parseDate(d.cdate), currentMon, now)).length,
+        mqlThisWeek: mql,
         mm4s: mm4sValue,
         taxaAgendamento: taxaAgend,
         taxaComparecimento: taxaComp,

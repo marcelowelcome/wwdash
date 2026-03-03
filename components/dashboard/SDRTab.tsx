@@ -139,9 +139,9 @@ export function SDRTab({ deals, fieldMap }: SDRTabProps) {
                     <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 20 }}>
                         <FunnelBar label="MQL" value={m.funnel.mql} pctMQL={100} pctPrev={100} width="100%" color="#4D94FF" />
                         <FunnelBar label="Agendamentos" value={m.funnel.agendamentos} pctMQL={(m.funnel.agendamentos / m.funnel.mql) * 100} pctPrev={(m.funnel.agendamentos / m.funnel.mql) * 100} width={`${Math.max((m.funnel.agendamentos / m.funnel.mql) * 100, 5)}%`} color={T.berry} />
-                        <FunnelBar label="Reuniões" value={m.funnel.reunioes} pctMQL={(m.funnel.reunioes / m.funnel.mql) * 100} pctPrev={(m.funnel.reunioes / (m.funnel.agendamentos || 1)) * 100} width={`${Math.max((m.funnel.reunioes / m.funnel.mql) * 100, 5)}%`} color={T.orange} />
-                        <FunnelBar label="Qualificados" value={m.funnel.qualificados} pctMQL={(m.funnel.qualificados / m.funnel.mql) * 100} pctPrev={(m.funnel.qualificados / (m.funnel.reunioes || 1)) * 100} width={`${Math.max((m.funnel.qualificados / m.funnel.mql) * 100, 5)}%`} color={T.green} />
-                        <FunnelBar label="Ag. Closer" value={m.funnel.agCloser} pctMQL={(m.funnel.agCloser / m.funnel.mql) * 100} pctPrev={(m.funnel.agCloser / (m.funnel.qualificados || 1)) * 100} width={`${Math.max((m.funnel.agCloser / m.funnel.mql) * 100, 5)}%`} color={T.rose} />
+                        <FunnelBar label="Reuniões" value={m.funnel.reunioes} pctMQL={(m.funnel.reunioes / m.funnel.mql) * 100} pctPrev={m.funnel.agendamentos > 0 ? (m.funnel.reunioes / m.funnel.agendamentos) * 100 : 0} width={`${Math.max((m.funnel.reunioes / m.funnel.mql) * 100, 5)}%`} color={T.orange} />
+                        <FunnelBar label="Qualificados" value={m.funnel.qualificados} pctMQL={(m.funnel.qualificados / m.funnel.mql) * 100} pctPrev={m.funnel.reunioes > 0 ? (m.funnel.qualificados / m.funnel.reunioes) * 100 : 0} width={`${Math.max((m.funnel.qualificados / m.funnel.mql) * 100, 5)}%`} color={T.green} />
+                        <FunnelBar label="Ag. Closer" value={m.funnel.agCloser} pctMQL={(m.funnel.agCloser / m.funnel.mql) * 100} pctPrev={m.funnel.qualificados > 0 ? (m.funnel.agCloser / m.funnel.qualificados) * 100 : 0} width={`${Math.max((m.funnel.agCloser / m.funnel.mql) * 100, 5)}%`} color={T.rose} />
                     </div>
                 </div>
 
