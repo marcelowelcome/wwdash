@@ -64,5 +64,31 @@ export const FieldMetaResponseSchema = z.object({
     dealCustomFieldMeta: z.array(FieldMetaSchema).optional().default([]),
 });
 
+// ─── Won Deal Schema (extends Deal with contract-analysis fields) ────────────
+export const WonDealSchema = DealSchema.extend({
+    // Contract / revenue fields
+    valor_fechado_em_contrato: z.number().nullable().optional(),
+    orcamento: z.number().nullable().optional(),
+    num_convidados: z.number().nullable().optional(),
+    cidade: z.string().nullable().optional(),
+    pipeline: z.string().nullable().optional(),
+    is_elopement: z.boolean().nullable().optional(),
+    ww_fonte_do_lead: z.string().nullable().optional(),
+    // SDR-gathered scoring fields
+    status_do_relacionamento: z.string().nullable().optional(),
+    costumam_viajar: z.boolean().nullable().optional(),
+    motivo_destination_wedding: z.boolean().nullable().optional(),
+    ja_foi_destination_wedding: z.boolean().nullable().optional(),
+    ja_tem_destino_definido: z.boolean().nullable().optional(),
+    previsao_data_casamento: z.string().nullable().optional(),
+    previsao_contratar_assessoria: z.string().nullable().optional(),
+    // Closer-gathered scoring fields
+    tipo_reuniao_closer: z.string().nullable().optional(),
+    fez_segunda_reuniao: z.boolean().nullable().optional(),
+    apresentado_orcamento: z.boolean().nullable().optional(),
+});
+
+export type WonDeal = z.infer<typeof WonDealSchema>;
+
 // ─── Status type ──────────────────────────────────────────────────────────────
 export type Status = "green" | "orange" | "red";

@@ -160,4 +160,50 @@ export const METRIC_DEFINITIONS: Record<string, MetricDefinition> = {
         type: "Cálculo",
         normalRange: "0 alertas críticos"
     },
+
+    // ── Contratos Tab ───────────────────────────────────────────────────────
+    totalContratos: {
+        label: "Total de Contratos",
+        description: "Quantidade total de contratos fechados (deals com data_fechamento preenchida) no período selecionado.",
+        origin: "Supabase (deals com data_fechamento)",
+        calculation: "Contagem de deals com data_fechamento no período.",
+        type: "Automática",
+    },
+    receitaTotal: {
+        label: "Receita Total",
+        description: "Soma dos valores fechados em contrato no período selecionado.",
+        origin: "Supabase (campo valor_fechado_em_contrato)",
+        calculation: "SUM(valor_fechado_em_contrato) dos deals no período.",
+        type: "Automática",
+    },
+    ticketMedio: {
+        label: "Ticket Médio",
+        description: "Valor médio por contrato fechado no período.",
+        origin: "Cálculo interno",
+        calculation: "Receita Total / Total de Contratos com valor informado.",
+        type: "Cálculo",
+    },
+    mediaConvidados: {
+        label: "Média de Convidados",
+        description: "Número médio de convidados por contrato fechado.",
+        origin: "Supabase (campo num_convidados)",
+        calculation: "AVG(num_convidados) dos deals com valor informado.",
+        type: "Automática",
+    },
+    tempoMedioFechamento: {
+        label: "Tempo Médio de Fechamento",
+        description: "Média de dias entre a criação do deal e o fechamento do contrato.",
+        origin: "Cálculo (data_fechamento - cdate)",
+        calculation: "AVG(data_fechamento - cdate) em dias.",
+        type: "Cálculo",
+        normalRange: "Abaixo de 30 dias",
+        alertRule: "🔴 Acima de 60 dias",
+    },
+    ticketPorConvidado: {
+        label: "Ticket por Convidado",
+        description: "Valor médio do contrato dividido pelo total de convidados.",
+        origin: "Cálculo interno",
+        calculation: "Receita Total / SUM(num_convidados).",
+        type: "Cálculo",
+    },
 };

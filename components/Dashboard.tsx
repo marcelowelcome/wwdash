@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
-import { fetchAllDealsFromDb, fetchFieldMetaFromDb, fetchStagesFromDb, fetchWonDealsFromDb, SDR_GROUP_ID, CLOSER_GROUP_ID } from "@/lib/supabase-api";
+import { fetchAllDealsFromDb, fetchFieldMetaFromDb, fetchStagesFromDb, fetchWonDealsFromDb, CLOSER_GROUP_ID } from "@/lib/supabase-api";
 import { computeMetrics, type Metrics } from "@/lib/metrics";
 import { T, statusColor } from "./dashboard/theme";
 import { OverviewTab } from "./dashboard/OverviewTab";
@@ -9,17 +9,21 @@ import { SDRTab } from "./dashboard/SDRTab";
 import { CloserTab } from "./dashboard/CloserTab";
 import { PipelineTab } from "./dashboard/PipelineTab";
 import { DictionaryTab } from "./dashboard/DictionaryTab";
+import { ContratosTab } from "./dashboard/ContratosTab";
+import { PerfilScoreTab } from "./dashboard/PerfilScoreTab";
 import { ChangelogModal } from "./dashboard/ChangelogModal";
 import { CURRENT_VERSION } from "@/lib/versions";
-import { type Deal } from "@/lib/schemas";
+import { type WonDeal } from "@/lib/schemas";
 
-type TabId = "overview" | "funnel" | "sdr" | "closer" | "pipeline" | "dictionary";
+type TabId = "overview" | "funnel" | "sdr" | "closer" | "pipeline" | "contratos" | "perfil-score" | "dictionary";
 
 const TABS: { id: TabId; label: string }[] = [
     { id: "overview", label: "Visão Geral" },
     { id: "sdr", label: "SDR" },
     { id: "closer", label: "Closer" },
     { id: "pipeline", label: "Pipeline" },
+    { id: "contratos", label: "Contratos" },
+    { id: "perfil-score", label: "Perfil & Score" },
     { id: "dictionary", label: "Dicionário" },
 ];
 
@@ -107,7 +111,9 @@ export default function Dashboard() {
     const [loadStep, setLoadStep] = useState("Conectando ao banco de dados…");
     const [error, setError] = useState<{ type: string; msg: string } | null>(null);
     const [metrics, setMetrics] = useState<any | null>(null);
-    const [sdrDeals, setSdrDeals] = useState<Deal[]>([]);
+    const [sdrDeals, setSdrDeals] = useState<WonDeal[]>([]);
+    const [wonDeals, setWonDeals] = useState<WonDeal[]>([]);
+    const [closerDeals, setCloserDeals] = useState<WonDeal[]>([]);
     const [acFieldMap, setAcFieldMap] = useState<Record<string, string>>({});
     const [lastUpdate, setLastUpdate] = useState<string | null>(null);
     const [isChangelogOpen, setIsChangelogOpen] = useState(false);
@@ -131,11 +137,13 @@ export default function Dashboard() {
 
             setLoadStep("Carregando pipeline Closer (últimos 365 dias)…");
             const closerDeals = await fetchAllDealsFromDb(CLOSER_GROUP_ID, 365);
+            setCloserDeals(closerDeals);
             setLoadStep("Carregando casamentos ganhos / planejamento…");
-            const wonDeals = await fetchWonDealsFromDb(CLOSER_GROUP_ID);
+            const wonDealsData = await fetchWonDealsFromDb(CLOSER_GROUP_ID);
+            setWonDeals(wonDealsData);
 
             setLoadStep("Calculando métricas…");
-            setMetrics(computeMetrics(sdrP1, closerDeals, wonDeals, fieldMap, stageMap));
+            setMetrics(computeMetrics(sdrP1, closerDeals, wonDealsData, fieldMap, stageMap));
 
             setLastUpdate(new Date().toLocaleTimeString("pt-BR"));
         } catch (e) {
@@ -213,6 +221,8 @@ export default function Dashboard() {
                 {tab === "funnel" && <FunnelTab m={metrics} />}
                 {tab === "closer" && <CloserTab m={metrics} />}
                 {tab === "pipeline" && <PipelineTab m={metrics} />}
+                {tab === "contratos" && <ContratosTab deals={wonDeals} fieldMap={acFieldMap} />}
+                {tab === "perfil-score" && <PerfilScoreTab wonDeals={wonDeals} closerDeals={closerDeals} sdrDeals={sdrDeals} fieldMap={acFieldMap} />}
                 {tab === "dictionary" && <DictionaryTab />}
             </div>
             <ChangelogModal

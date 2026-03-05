@@ -1,5 +1,5 @@
 import { supabase } from "./supabase";
-import { type Deal } from "./schemas";
+import { type WonDeal } from "./schemas";
 
 // ─── CONFIG ────────────────────────────────────────────────────────────────────
 export const SDR_GROUP_ID = "1";
@@ -35,7 +35,7 @@ function mapSql(val: any): string {
 export async function fetchAllDealsFromDb(
     groupId: string,
     daysBack = 180
-): Promise<Deal[]> {
+): Promise<WonDeal[]> {
     const after = new Date();
     after.setDate(after.getDate() - daysBack);
     const afterStr = after.toISOString();
@@ -72,7 +72,7 @@ export async function fetchAllDealsFromDb(
             "Lost": "2"
         };
 
-        const deal: Deal = {
+        const deal: WonDeal = {
             id: String(row.id),
             cdate: row.created_at,
             mdate: row.updated_at || undefined,
@@ -86,6 +86,26 @@ export async function fetchAllDealsFromDb(
             data_reuniao_1: row.data_reuniao_1 || null,
             como_foi_feita_a_1a_reuniao: mapMeetingType(row.como_reuniao_1),
             data_horario_agendamento_closer: row.data_closer || null,
+            // Contract-analysis fields
+            valor_fechado_em_contrato: row.valor_fechado_em_contrato ? parseFloat(row.valor_fechado_em_contrato) : null,
+            orcamento: row.orcamento ? parseFloat(row.orcamento) : null,
+            num_convidados: row.num_convidados ? parseInt(row.num_convidados, 10) : null,
+            cidade: row.cidade || null,
+            pipeline: row.pipeline || null,
+            is_elopement: row.is_elopement ?? null,
+            ww_fonte_do_lead: row.ww_fonte_do_lead || null,
+            // SDR-gathered scoring fields
+            status_do_relacionamento: row.status_do_relacionamento || null,
+            costumam_viajar: row.costumam_viajar ?? null,
+            motivo_destination_wedding: row.motivo_da_escolha_de_um_destination_wedding ?? null,
+            ja_foi_destination_wedding: row.j_foi_em_algum_destination_wedding ?? null,
+            ja_tem_destino_definido: row.j_tem_destino_definido ?? null,
+            previsao_data_casamento: row.previs_o_data_de_casamento ? String(row.previs_o_data_de_casamento) : null,
+            previsao_contratar_assessoria: row.previs_o_contratar_assessoria || null,
+            // Closer-gathered scoring fields
+            tipo_reuniao_closer: row.ww_como_foi_feita_reuni_o_closer || row.tipo_da_reuni_o_com_a_closer || null,
+            fez_segunda_reuniao: row.ww_fez_segunda_reuni_o ?? null,
+            apresentado_orcamento: row.ww_foi_apresentado_detalhamento_de_or_amento ?? null,
             _cf: {
                 [FQ_ID]: row.motivos_qualificacao_sdr || "",
                 [FL_ID]: row.ww_closer_motivo_de_perda || row.motivo_de_perda || "",
@@ -105,7 +125,7 @@ export async function fetchAllDealsFromDb(
  * Fetches all deals that have been won (data_fechamento is not null) for a specific group.
  * These represent the "Casamentos em planning" and past won deals.
  */
-export async function fetchWonDealsFromDb(groupId: string): Promise<Deal[]> {
+export async function fetchWonDealsFromDb(_groupId: string): Promise<WonDeal[]> {
     let allRows: any[] = [];
     let from = 0;
     const limit = 1000;
@@ -150,6 +170,26 @@ export async function fetchWonDealsFromDb(groupId: string): Promise<Deal[]> {
             data_reuniao_1: row.data_reuniao_1 || null,
             como_foi_feita_a_1a_reuniao: mapMeetingType(row.como_reuniao_1),
             data_horario_agendamento_closer: row.data_closer || null,
+            // Contract-analysis fields
+            valor_fechado_em_contrato: row.valor_fechado_em_contrato ? parseFloat(row.valor_fechado_em_contrato) : null,
+            orcamento: row.orcamento ? parseFloat(row.orcamento) : null,
+            num_convidados: row.num_convidados ? parseInt(row.num_convidados, 10) : null,
+            cidade: row.cidade || null,
+            pipeline: row.pipeline || null,
+            is_elopement: row.is_elopement ?? null,
+            ww_fonte_do_lead: row.ww_fonte_do_lead || null,
+            // SDR-gathered scoring fields
+            status_do_relacionamento: row.status_do_relacionamento || null,
+            costumam_viajar: row.costumam_viajar ?? null,
+            motivo_destination_wedding: row.motivo_da_escolha_de_um_destination_wedding ?? null,
+            ja_foi_destination_wedding: row.j_foi_em_algum_destination_wedding ?? null,
+            ja_tem_destino_definido: row.j_tem_destino_definido ?? null,
+            previsao_data_casamento: row.previs_o_data_de_casamento ? String(row.previs_o_data_de_casamento) : null,
+            previsao_contratar_assessoria: row.previs_o_contratar_assessoria || null,
+            // Closer-gathered scoring fields
+            tipo_reuniao_closer: row.ww_como_foi_feita_reuni_o_closer || row.tipo_da_reuni_o_com_a_closer || null,
+            fez_segunda_reuniao: row.ww_fez_segunda_reuni_o ?? null,
+            apresentado_orcamento: row.ww_foi_apresentado_detalhamento_de_or_amento ?? null,
             _cf: {
                 [FQ_ID]: row.motivos_qualificacao_sdr || "",
                 [FL_ID]: row.ww_closer_motivo_de_perda || row.motivo_de_perda || "",
