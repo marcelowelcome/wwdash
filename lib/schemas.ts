@@ -86,9 +86,43 @@ export const WonDealSchema = DealSchema.extend({
     tipo_reuniao_closer: z.string().nullable().optional(),
     fez_segunda_reuniao: z.boolean().nullable().optional(),
     apresentado_orcamento: z.boolean().nullable().optional(),
+    // Funnel Metas fields
+    data_qualificado: z.string().nullable().optional(),
+    reuniao_closer: z.string().nullable().optional(),
+    pipeline_id: z.number().nullable().optional(),
+    title: z.string().nullable().optional(),
 });
 
 export type WonDeal = z.infer<typeof WonDealSchema>;
+
+// ─── Monthly Target Schema ───────────────────────────────────────────────────
+export const MonthlyTargetSchema = z.object({
+    month: z.string(),
+    pipeline_type: z.enum(["elopement", "wedding", "trips"]),
+    leads: z.number(),
+    mql: z.number(),
+    agendamento: z.number(),
+    reunioes: z.number(),
+    qualificado: z.number(),
+    closer_agendada: z.number(),
+    closer_realizada: z.number(),
+    vendas: z.number(),
+    cpl: z.number(),
+});
+
+export type MonthlyTarget = z.infer<typeof MonthlyTargetSchema>;
+
+// ─── Funnel Metrics Interface ────────────────────────────────────────────────
+export interface FunnelMetrics {
+    leads: number;
+    mql: number;
+    agendamento: number;
+    reunioes: number;
+    qualificado: number;
+    closerAgendada: number;
+    closerRealizada: number;
+    vendas: number;
+}
 
 // ─── Status type ──────────────────────────────────────────────────────────────
 export type Status = "green" | "orange" | "red";

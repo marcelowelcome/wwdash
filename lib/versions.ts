@@ -7,8 +7,24 @@ export interface VersionEntry {
 
 export const VERSION_HISTORY: VersionEntry[] = [
     {
+        version: "1.6.0",
+        date: "06/03/2026",
+        description: "Funil de Metas com separação Wedding/Elopement e integração Ads.",
+        changes: [
+            "Nova aba 'Funil Metas' com tabela completa de métricas do funil de vendas.",
+            "Toggle de 3 visões: Wedding (apenas casamentos), Elopement (apenas elopements), Total (combinado).",
+            "Separação completa de dados Wedding e Elopement em todas as métricas.",
+            "Integração de dados de Meta Ads e Google Ads com cards de spend, clicks e CPM (em progresso).",
+            "Cálculo automático de CPL baseado no investimento total e leads gerados.",
+            "Cards de taxas de conversão (CVR) entre cada etapa do funil.",
+            "Comparação com período anterior e metas planejadas.",
+            "Modal de drill-down para visualizar deals de cada etapa.",
+            "Nova logo Welcome Weddings no header do dashboard.",
+        ],
+    },
+    {
         version: "1.5.0",
-        date: "2026-03-02",
+        date: "02/03/2026",
         description: "Refinamento SDR: Funil Semanal e métricas sincronizadas.",
         changes: [
             "Funil SDR agora exibe a última semana completa por padrão.",
@@ -20,7 +36,7 @@ export const VERSION_HISTORY: VersionEntry[] = [
     },
     {
         version: "1.4.0",
-        date: "2026-02-27",
+        date: "27/02/2026",
         description: "Correção da Lógica de Casamentos Ganhos e Pipeline Closer.",
         changes: [
             "Alteração do ID do pipeline Closer de 8 para 3.",
@@ -32,7 +48,7 @@ export const VERSION_HISTORY: VersionEntry[] = [
     },
     {
         version: "1.3.0",
-        date: "2026-02-27",
+        date: "27/02/2026",
         description: "Revamp estrutural Aba SDR (Topo do Funil).",
         changes: [
             "Renomeação oficial da tab para 'SDR'.",
@@ -45,7 +61,7 @@ export const VERSION_HISTORY: VersionEntry[] = [
     },
     {
         version: "1.2.0",
-        date: "2026-02-26",
+        date: "26/02/2026",
         description: "Dicionário de Métricas e Auxiliares Visuais.",
         changes: [
             "Criação da página 'Dicionário' com definições detalhadas de cada métrica.",
@@ -56,7 +72,7 @@ export const VERSION_HISTORY: VersionEntry[] = [
     },
     {
         version: "1.1.0",
-        date: "2026-02-25",
+        date: "25/02/2026",
         description: "Migração de infraestrutura de dados e sistema de versionamento.",
         changes: [
             "Migração da origem de dados: API do ActiveCampaign -> Supabase Database.",
@@ -68,7 +84,7 @@ export const VERSION_HISTORY: VersionEntry[] = [
     },
     {
         version: "1.0.0",
-        date: "2026-02-19",
+        date: "19/02/2026",
         description: "Lançamento inicial do Dashboard de Vendas Welcome Weddings.",
         changes: [
             "Visualização de KPIs (SDR Volume, Taxa de Qualificação, Conversão Closer).",

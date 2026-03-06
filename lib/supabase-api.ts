@@ -1,5 +1,5 @@
 import { supabase } from "./supabase";
-import { type WonDeal } from "./schemas";
+import { type WonDeal, type MonthlyTarget } from "./schemas";
 
 // ─── CONFIG ────────────────────────────────────────────────────────────────────
 export const SDR_GROUP_ID = "1";
@@ -106,6 +106,11 @@ export async function fetchAllDealsFromDb(
             tipo_reuniao_closer: row.ww_como_foi_feita_reuni_o_closer || row.tipo_da_reuni_o_com_a_closer || null,
             fez_segunda_reuniao: row.ww_fez_segunda_reuni_o ?? null,
             apresentado_orcamento: row.ww_foi_apresentado_detalhamento_de_or_amento ?? null,
+            // Funnel Metas fields
+            data_qualificado: row.data_qualificado || null,
+            reuniao_closer: row.reuniao_closer || null,
+            pipeline_id: row.pipeline_id ?? null,
+            title: row.title || null,
             _cf: {
                 [FQ_ID]: row.motivos_qualificacao_sdr || "",
                 [FL_ID]: row.ww_closer_motivo_de_perda || row.motivo_de_perda || "",
@@ -190,6 +195,11 @@ export async function fetchWonDealsFromDb(_groupId: string): Promise<WonDeal[]> 
             tipo_reuniao_closer: row.ww_como_foi_feita_reuni_o_closer || row.tipo_da_reuni_o_com_a_closer || null,
             fez_segunda_reuniao: row.ww_fez_segunda_reuni_o ?? null,
             apresentado_orcamento: row.ww_foi_apresentado_detalhamento_de_or_amento ?? null,
+            // Funnel Metas fields
+            data_qualificado: row.data_qualificado || null,
+            reuniao_closer: row.reuniao_closer || null,
+            pipeline_id: row.pipeline_id ?? null,
+            title: row.title || null,
             _cf: {
                 [FQ_ID]: row.motivos_qualificacao_sdr || "",
                 [FL_ID]: row.ww_closer_motivo_de_perda || row.motivo_de_perda || "",
@@ -201,6 +211,100 @@ export async function fetchWonDealsFromDb(_groupId: string): Promise<WonDeal[]> 
             }
         };
     });
+}
+
+/**
+ * Fetches monthly target for a specific month and pipeline type.
+ */
+export async function fetchMonthlyTarget(
+    year: number,
+    month: number,
+    pipelineType: "wedding" | "elopement" | "trips" = "wedding"
+): Promise<MonthlyTarget | null> {
+    const monthStr = `${year}-${String(month).padStart(2, "0")}-01`;
+
+    const { data, error } = await supabase
+        .from("monthly_targets")
+        .select("*")
+        .eq("month", monthStr)
+        .eq("pipeline_type", pipelineType)
+        .maybeSingle();
+
+    if (error) {
+        console.error("[fetchMonthlyTarget] Error:", error);
+        return null;
+    }
+
+    return data as MonthlyTarget | null;
+}
+
+/**
+ * Fetches all deals for a specific month (by created_at).
+ */
+export async function fetchDealsForMonth(
+    year: number,
+    month: number
+): Promise<WonDeal[]> {
+    const startDate = new Date(year, month - 1, 1);
+    const endDate = new Date(year, month, 0, 23, 59, 59);
+
+    let allRows: any[] = [];
+    let from = 0;
+    const limit = 1000;
+
+    while (true) {
+        const { data, error } = await supabase
+            .from("deals")
+            .select("*")
+            .gte("created_at", startDate.toISOString())
+            .lte("created_at", endDate.toISOString())
+            .order("created_at", { ascending: false })
+            .range(from, from + limit - 1);
+
+        if (error) {
+            console.error("[fetchDealsForMonth] Error:", error);
+            break;
+        }
+        if (!data || data.length === 0) break;
+
+        allRows = allRows.concat(data);
+        if (data.length < limit) break;
+        from += limit;
+    }
+
+    const statusMap: Record<string, string> = {
+        "Won": "0",
+        "Open": "1",
+        "Lost": "2"
+    };
+
+    return allRows.map((row) => ({
+        id: String(row.id),
+        cdate: row.created_at,
+        mdate: row.updated_at || undefined,
+        status: statusMap[row.status] || "1",
+        stage: row.stage || "Padrão",
+        group_id: row.group_id,
+        stage_id: row.stage_id,
+        owner_id: row.owner_id,
+        data_fechamento: row.ww_closer_data_hora_ganho || row.data_fechamento,
+        destino: row.destino || null,
+        data_reuniao_1: row.data_reuniao_1 || null,
+        como_foi_feita_a_1a_reuniao: row.como_reuniao_1 || null,
+        data_horario_agendamento_closer: row.data_closer || null,
+        valor_fechado_em_contrato: row.valor_fechado_em_contrato ? parseFloat(row.valor_fechado_em_contrato) : null,
+        orcamento: row.orcamento ? parseFloat(row.orcamento) : null,
+        num_convidados: row.num_convidados ? parseInt(row.num_convidados, 10) : null,
+        cidade: row.cidade || null,
+        pipeline: row.pipeline || null,
+        is_elopement: row.is_elopement ?? null,
+        ww_fonte_do_lead: row.ww_fonte_do_lead || null,
+        data_qualificado: row.data_qualificado || null,
+        reuniao_closer: row.reuniao_closer || null,
+        pipeline_id: row.pipeline_id != null ? Number(row.pipeline_id) : null,
+        title: row.title || null,
+        _cf: {}
+    }));
 }
 
 /**
@@ -251,4 +355,391 @@ export function buildWeekLabel(key: string): string {
     const end = new Date(dt);
     end.setDate(dt.getDate() + 6);
     return `${dt.getDate()}/${dt.getMonth() + 1}–${end.getDate()}/${end.getMonth() + 1}`;
+}
+
+// ============================================
+// FUNNEL METAS QUERIES (from dash-webhook)
+// ============================================
+
+// Wedding Pipeline IDs
+const WW_PIPELINE_IDS = [1, 3, 4, 17, 31];
+const ELOPEMENT_PIPELINE_ID = 12;
+
+function mapRowToWonDeal(row: any): WonDeal {
+    const statusMap: Record<string, string> = {
+        "Won": "0",
+        "Open": "1",
+        "Lost": "2"
+    };
+    return {
+        id: String(row.id),
+        cdate: row.created_at,
+        mdate: row.updated_at || undefined,
+        status: statusMap[row.status] || "1",
+        stage: row.stage || "Padrão",
+        group_id: row.group_id,
+        stage_id: row.stage_id,
+        owner_id: row.owner_id,
+        data_fechamento: row.ww_closer_data_hora_ganho || row.data_fechamento,
+        destino: row.destino || null,
+        data_reuniao_1: row.data_reuniao_1 || null,
+        como_foi_feita_a_1a_reuniao: row.como_reuniao_1 || null,
+        data_horario_agendamento_closer: row.data_closer || null,
+        valor_fechado_em_contrato: row.valor_fechado_em_contrato ? parseFloat(row.valor_fechado_em_contrato) : null,
+        orcamento: row.orcamento ? parseFloat(row.orcamento) : null,
+        num_convidados: row.num_convidados ? parseInt(row.num_convidados, 10) : null,
+        cidade: row.cidade || null,
+        pipeline: row.pipeline || null,
+        is_elopement: row.is_elopement ?? null,
+        ww_fonte_do_lead: row.ww_fonte_do_lead || null,
+        data_qualificado: row.data_qualificado || null,
+        reuniao_closer: row.reuniao_closer || null,
+        pipeline_id: row.pipeline_id != null ? Number(row.pipeline_id) : null,
+        title: row.title || null,
+        _cf: {}
+    };
+}
+
+/**
+ * Fetches Wedding deals for a specific month (by created_at).
+ * Filters by pipeline_id IN (1, 3, 4, 17, 31) AND title NOT starts with 'EW'
+ */
+export async function fetchWeddingDealsForMonth(
+    year: number,
+    month: number
+): Promise<WonDeal[]> {
+    const startDate = new Date(year, month - 1, 1);
+    const endDate = new Date(year, month, 0, 23, 59, 59);
+
+    let allRows: any[] = [];
+    let from = 0;
+    const limit = 1000;
+
+    while (true) {
+        const { data, error } = await supabase
+            .from("deals")
+            .select("*")
+            .gte("created_at", startDate.toISOString())
+            .lte("created_at", endDate.toISOString())
+            .in("pipeline_id", WW_PIPELINE_IDS)
+            .not("title", "ilike", "EW%")
+            .order("created_at", { ascending: false })
+            .range(from, from + limit - 1);
+
+        if (error) {
+            console.error("[fetchWeddingDealsForMonth] Error:", error);
+            break;
+        }
+        if (!data || data.length === 0) break;
+
+        allRows = allRows.concat(data);
+        if (data.length < limit) break;
+        from += limit;
+    }
+
+    return allRows.map(mapRowToWonDeal);
+}
+
+/**
+ * Fetches deals with data_fechamento in the selected month.
+ * These are vendas that may have been created in previous months.
+ */
+export async function fetchVendasForMonth(
+    year: number,
+    month: number
+): Promise<{ count: number; deals: WonDeal[] }> {
+    const startDate = `${year}-${String(month).padStart(2, "0")}-01`;
+    const endMonth = month === 12 ? 1 : month + 1;
+    const endYear = month === 12 ? year + 1 : year;
+    const endDate = `${endYear}-${String(endMonth).padStart(2, "0")}-01`;
+
+    let allRows: any[] = [];
+    let from = 0;
+    const limit = 1000;
+
+    while (true) {
+        const { data, error } = await supabase
+            .from("deals")
+            .select("*")
+            .gte("data_fechamento", startDate)
+            .lt("data_fechamento", endDate)
+            .not("pipeline_id", "eq", ELOPEMENT_PIPELINE_ID)
+            .not("title", "ilike", "EW%")
+            .order("data_fechamento", { ascending: false })
+            .range(from, from + limit - 1);
+
+        if (error) {
+            console.error("[fetchVendasForMonth] Error:", error);
+            break;
+        }
+        if (!data || data.length === 0) break;
+
+        allRows = allRows.concat(data);
+        if (data.length < limit) break;
+        from += limit;
+    }
+
+    return {
+        count: allRows.length,
+        deals: allRows.map(mapRowToWonDeal)
+    };
+}
+
+/**
+ * Fetches deals with data_closer in the selected month.
+ * These are closer meetings that may have been created in previous months.
+ */
+export async function fetchClosersForMonth(
+    year: number,
+    month: number
+): Promise<{ count: number; deals: WonDeal[] }> {
+    const startDate = `${year}-${String(month).padStart(2, "0")}-01`;
+    const endMonth = month === 12 ? 1 : month + 1;
+    const endYear = month === 12 ? year + 1 : year;
+    const endDate = `${endYear}-${String(endMonth).padStart(2, "0")}-01`;
+
+    let allRows: any[] = [];
+    let from = 0;
+    const limit = 1000;
+
+    while (true) {
+        const { data, error } = await supabase
+            .from("deals")
+            .select("*")
+            .gte("data_closer", startDate)
+            .lt("data_closer", endDate)
+            .not("pipeline_id", "eq", ELOPEMENT_PIPELINE_ID)
+            .not("title", "ilike", "EW%")
+            .order("data_closer", { ascending: false })
+            .range(from, from + limit - 1);
+
+        if (error) {
+            console.error("[fetchClosersForMonth] Error:", error);
+            break;
+        }
+        if (!data || data.length === 0) break;
+
+        allRows = allRows.concat(data);
+        if (data.length < limit) break;
+        from += limit;
+    }
+
+    return {
+        count: allRows.length,
+        deals: allRows.map(mapRowToWonDeal)
+    };
+}
+
+/**
+ * Fetches Elopement deals for a specific month (by created_at).
+ * Pipeline "Elopment Wedding" OR title starts with 'EW' - for Leads count only.
+ */
+export async function fetchElopementDealsForMonth(
+    year: number,
+    month: number
+): Promise<WonDeal[]> {
+    const startDate = new Date(year, month - 1, 1);
+    const endDate = new Date(year, month, 0, 23, 59, 59);
+
+    let allRows: any[] = [];
+    let from = 0;
+    const limit = 1000;
+
+    // Query by pipeline name "Elopment Wedding" (note: typo in original data)
+    while (true) {
+        const { data, error } = await supabase
+            .from("deals")
+            .select("*")
+            .gte("created_at", startDate.toISOString())
+            .lte("created_at", endDate.toISOString())
+            .eq("pipeline", "Elopment Wedding")
+            .order("created_at", { ascending: false })
+            .range(from, from + limit - 1);
+
+        if (error) {
+            console.error("[fetchElopementDealsForMonth] Error:", error);
+            break;
+        }
+        if (!data || data.length === 0) break;
+
+        allRows = allRows.concat(data);
+        if (data.length < limit) break;
+        from += limit;
+    }
+
+    return allRows.map(mapRowToWonDeal);
+}
+
+/**
+ * Fetches all deals needed for funnel calculation in a specific month.
+ * Combines created_at, data_fechamento, data_closer, and Elopement queries (deduplicated).
+ */
+export async function fetchAllFunnelDealsForMonth(
+    year: number,
+    month: number
+): Promise<WonDeal[]> {
+    const [createdDeals, vendasData, closersData, elopementDeals] = await Promise.all([
+        fetchWeddingDealsForMonth(year, month),
+        fetchVendasForMonth(year, month),
+        fetchClosersForMonth(year, month),
+        fetchElopementDealsForMonth(year, month),
+    ]);
+
+    // Deduplicate by deal ID
+    const existingIds = new Set(createdDeals.map(d => d.id));
+    const allDeals = [
+        ...createdDeals,
+        ...vendasData.deals.filter(d => !existingIds.has(d.id)),
+    ];
+
+    const existingIds2 = new Set(allDeals.map(d => d.id));
+    const withClosers = [
+        ...allDeals,
+        ...closersData.deals.filter(d => !existingIds2.has(d.id)),
+    ];
+
+    // Add Elopement deals (for Leads count only)
+    const existingIds3 = new Set(withClosers.map(d => d.id));
+    const finalDeals = [
+        ...withClosers,
+        ...elopementDeals.filter(d => !existingIds3.has(d.id)),
+    ];
+
+    return finalDeals;
+}
+
+export interface AdsSpendData {
+    spend: number;
+    impressions: number;
+    clicks: number;
+    cpc: number;
+    cpm: number;
+}
+
+/**
+ * Fetches Meta Ads spend data from cache.
+ * Tries pipeline="wedding" first, then pipeline=null for backwards compatibility.
+ */
+export async function fetchMetaAdsSpend(
+    year: number,
+    month: number
+): Promise<AdsSpendData> {
+    try {
+        // Try with pipeline="wedding" first (current data format)
+        let { data, error } = await supabase
+            .from("ads_spend_cache")
+            .select("spend, impressions, clicks, cpc, cpm")
+            .eq("year", year)
+            .eq("month", month)
+            .eq("source", "meta_ads")
+            .eq("pipeline", "wedding")
+            .maybeSingle();
+
+        // If not found, try with pipeline=null (legacy format)
+        if (!data) {
+            const result = await supabase
+                .from("ads_spend_cache")
+                .select("spend, impressions, clicks, cpc, cpm")
+                .eq("year", year)
+                .eq("month", month)
+                .eq("source", "meta_ads")
+                .is("pipeline", null)
+                .maybeSingle();
+            data = result.data;
+            error = result.error;
+        }
+
+        if (error || !data) {
+            return { spend: 0, impressions: 0, clicks: 0, cpc: 0, cpm: 0 };
+        }
+
+        return {
+            spend: Number(data.spend) || 0,
+            impressions: data.impressions || 0,
+            clicks: data.clicks || 0,
+            cpc: Number(data.cpc) || 0,
+            cpm: Number(data.cpm) || 0,
+        };
+    } catch (error) {
+        console.error("[fetchMetaAdsSpend] Error:", error);
+        return { spend: 0, impressions: 0, clicks: 0, cpc: 0, cpm: 0 };
+    }
+}
+
+/**
+ * Fetches Google Ads spend data from cache.
+ * Tries pipeline="wedding" first, then pipeline=null for backwards compatibility.
+ */
+export async function fetchGoogleAdsSpend(
+    year: number,
+    month: number
+): Promise<AdsSpendData> {
+    try {
+        // Try with pipeline="wedding" first
+        let { data, error } = await supabase
+            .from("ads_spend_cache")
+            .select("spend, impressions, clicks, cpc, cpm")
+            .eq("year", year)
+            .eq("month", month)
+            .eq("source", "google_ads")
+            .eq("pipeline", "wedding")
+            .maybeSingle();
+
+        // If not found, try with pipeline=null
+        if (!data) {
+            const result = await supabase
+                .from("ads_spend_cache")
+                .select("spend, impressions, clicks, cpc, cpm")
+                .eq("year", year)
+                .eq("month", month)
+                .eq("source", "google_ads")
+                .is("pipeline", null)
+                .maybeSingle();
+            data = result.data;
+        }
+
+        if (!data) {
+            return { spend: 0, impressions: 0, clicks: 0, cpc: 0, cpm: 0 };
+        }
+
+        return {
+            spend: Number(data.spend) || 0,
+            impressions: data.impressions || 0,
+            clicks: data.clicks || 0,
+            cpc: Number(data.cpc) || 0,
+            cpm: Number(data.cpm) || 0,
+        };
+    } catch (error) {
+        console.error("[fetchGoogleAdsSpend] Error:", error);
+        return { spend: 0, impressions: 0, clicks: 0, cpc: 0, cpm: 0 };
+    }
+}
+
+/**
+ * Fetches combined Ads spend (Meta + Google) from cache.
+ */
+export async function fetchAllAdsSpend(
+    year: number,
+    month: number
+): Promise<{ meta: AdsSpendData; google: AdsSpendData; total: AdsSpendData }> {
+    const [meta, google] = await Promise.all([
+        fetchMetaAdsSpend(year, month),
+        fetchGoogleAdsSpend(year, month),
+    ]);
+
+    return {
+        meta,
+        google,
+        total: {
+            spend: meta.spend + google.spend,
+            impressions: meta.impressions + google.impressions,
+            clicks: meta.clicks + google.clicks,
+            cpc: (meta.clicks + google.clicks) > 0
+                ? (meta.spend + google.spend) / (meta.clicks + google.clicks)
+                : 0,
+            cpm: (meta.impressions + google.impressions) > 0
+                ? ((meta.spend + google.spend) / (meta.impressions + google.impressions)) * 1000
+                : 0,
+        },
+    };
 }
