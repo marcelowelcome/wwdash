@@ -25,7 +25,7 @@ export interface ContractMetrics {
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
-function getPeriodRange(filter: PeriodFilter): [Date, Date] {
+export function getPeriodRange(filter: PeriodFilter): [Date, Date] {
     const now = new Date();
     const end = new Date(now);
     let start: Date;

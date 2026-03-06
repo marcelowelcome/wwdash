@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, useMemo } from "react";
 import {
     ComposedChart, Line, BarChart, Bar,
     XAxis, YAxis, CartesianGrid, Tooltip,
@@ -9,37 +10,159 @@ import { KpiCard } from "./KpiCard";
 import { SectionTitle } from "./SectionTitle";
 import { CustomTooltip } from "./CustomTooltip";
 import { T, statusColor } from "./theme";
-import { type Metrics } from "@/lib/metrics";
+import { computeOverviewMetrics } from "@/lib/metrics-overview";
+import { type Deal } from "@/lib/schemas";
 
 interface OverviewTabProps {
-    m: Metrics;
+    sdrDeals: Deal[];
+    closerDeals: Deal[];
+    wonDeals: Deal[];
+    fieldMap: Record<string, string>;
+    stageMap: Record<string, string>;
 }
 
-export function OverviewTab({ m }: OverviewTabProps) {
+function getWeekStart(): string {
+    const now = new Date();
+    const day = now.getDay();
+    const diff = day === 0 ? 6 : day - 1;
+    const monday = new Date(now);
+    monday.setDate(now.getDate() - diff);
+    return monday.toISOString().slice(0, 10);
+}
+
+function todayStr(): string {
+    return new Date().toISOString().slice(0, 10);
+}
+
+function daysAgoStr(n: number): string {
+    const d = new Date();
+    d.setDate(d.getDate() - n);
+    return d.toISOString().slice(0, 10);
+}
+
+type Shortcut = "week" | "4weeks" | "3months" | "full" | null;
+
+function detectShortcut(startStr: string, endStr: string): Shortcut {
+    const today = todayStr();
+    if (endStr !== today) return null;
+    if (startStr === getWeekStart()) return "week";
+    if (startStr === daysAgoStr(28)) return "4weeks";
+    if (startStr === daysAgoStr(90)) return "3months";
+    if (startStr <= "2020-01-01") return "full";
+    return null;
+}
+
+export function OverviewTab({ sdrDeals, closerDeals, wonDeals, fieldMap, stageMap }: OverviewTabProps) {
+    const [startStr, setStartStr] = useState(getWeekStart);
+    const [endStr, setEndStr] = useState(todayStr);
+
+    const activeShortcut = detectShortcut(startStr, endStr);
+
+    const periodStart = useMemo(() => {
+        const d = new Date(startStr + "T00:00:00");
+        return isNaN(d.getTime()) ? new Date() : d;
+    }, [startStr]);
+
+    const periodEnd = useMemo(() => {
+        const d = new Date(endStr + "T23:59:59");
+        return isNaN(d.getTime()) ? new Date() : d;
+    }, [endStr]);
+
+    const m = useMemo(
+        () => computeOverviewMetrics(sdrDeals, closerDeals, wonDeals, fieldMap, stageMap, periodStart, periodEnd),
+        [sdrDeals, closerDeals, wonDeals, fieldMap, stageMap, periodStart, periodEnd]
+    );
+
+    const applyShortcut = (key: string) => {
+        const today = todayStr();
+        setEndStr(today);
+        switch (key) {
+            case "week": setStartStr(getWeekStart()); break;
+            case "4weeks": setStartStr(daysAgoStr(28)); break;
+            case "3months": setStartStr(daysAgoStr(90)); break;
+            case "full": setStartStr("2020-01-01"); break;
+        }
+    };
+
+    const shortcuts = [
+        { key: "week", label: "Semana" },
+        { key: "4weeks", label: "4 Semanas" },
+        { key: "3months", label: "3 Meses" },
+        { key: "full", label: "Tudo" },
+    ];
+
+    const inputStyle: React.CSSProperties = {
+        background: T.surface,
+        color: T.white,
+        border: `1px solid ${T.border}`,
+        borderRadius: 6,
+        padding: "4px 8px",
+        fontSize: 11,
+        fontFamily: "inherit",
+        cursor: "pointer",
+        colorScheme: "dark",
+    };
+
     return (
         <div style={{ display: "flex", flexDirection: "column", gap: 22 }}>
+            {/* Period Selector */}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 8, flexWrap: "wrap" }}>
+                {shortcuts.map(s => (
+                    <button
+                        key={s.key}
+                        onClick={() => applyShortcut(s.key)}
+                        style={{
+                            background: activeShortcut === s.key ? T.gold : T.card,
+                            color: activeShortcut === s.key ? T.bg : T.muted,
+                            border: `1px solid ${T.border}`,
+                            borderRadius: 6,
+                            padding: "4px 10px",
+                            fontSize: 11,
+                            fontWeight: 600,
+                            cursor: "pointer",
+                            transition: "all 0.2s"
+                        }}
+                    >
+                        {s.label}
+                    </button>
+                ))}
+                <span style={{ color: T.muted, fontSize: 11, margin: "0 4px" }}>|</span>
+                <input
+                    type="date"
+                    value={startStr}
+                    onChange={e => setStartStr(e.target.value)}
+                    style={inputStyle}
+                />
+                <span style={{ color: T.muted, fontSize: 11 }}>ate</span>
+                <input
+                    type="date"
+                    value={endStr}
+                    onChange={e => setEndStr(e.target.value)}
+                    style={inputStyle}
+                />
+            </div>
+
             {/* KPI Row */}
             <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 14 }}>
                 <KpiCard
-                    label="Leads SDR (sem.)"
-                    value={m.sdrThisWeek}
+                    label="Leads SDR"
+                    value={m.sdrLeads}
                     status={m.sdrStatus}
-                    delta={`${m.sdrVsAvg > 100 ? "▲" : "▼"} ${Math.abs(m.sdrThisWeek - m.sdrAvg4).toFixed(0)} vs MM4s`}
+                    delta={`Media ${m.sdrAvgPerWeek}/sem.`}
                     metricKey="sdrThisWeek"
                 />
                 <KpiCard
-                    label="Média 4 sem (SDR)"
-                    value={m.sdrAvg4}
-                    sub="Linha de base"
-                    status="green"
-                    metricKey="sdrAvg4"
-                />
-                <KpiCard
-                    label="Conversão Closer MM4s"
+                    label="Conversao Closer"
                     value={`${m.conv_curr}%`}
                     status={m.convStatus}
                     delta={`${m.conv_curr > m.histRate ? "▲" : "▼"} vs ${m.histRate}% bench`}
                     metricKey="conv_curr"
+                />
+                <KpiCard
+                    label="Ganhos / Perdidos"
+                    value={`${m.wonCount} / ${m.lostCount}`}
+                    sub="no periodo"
+                    status={m.convStatus}
                 />
                 <KpiCard
                     label="Deals Closer em aberto"
@@ -60,12 +183,12 @@ export function OverviewTab({ m }: OverviewTabProps) {
             {m.activeAlerts && m.activeAlerts.length > 0 && (
                 <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: "16px 22px" }}>
                     <div style={{ fontSize: 13, fontWeight: 700, color: T.white, marginBottom: 12, display: "flex", alignItems: "center", gap: 8 }}>
-                        ⚠ ALERTAS ATIVOS
+                        ALERTAS ATIVOS
                     </div>
                     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                         {m.activeAlerts.map((alert, i) => (
                             <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 12 }}>
-                                <span>{alert.type === "red" ? "🔴" : alert.type === "orange" ? "🟡" : "🟢"}</span>
+                                <span style={{ color: statusColor(alert.type) }}>●</span>
                                 <span style={{ color: T.white }}>{alert.message}</span>
                                 {alert.action && (
                                     <span style={{ color: T.gold, fontWeight: 600, marginLeft: 4 }}>— {alert.action}</span>
@@ -79,7 +202,7 @@ export function OverviewTab({ m }: OverviewTabProps) {
             {/* Charts Row */}
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 18 }}>
                 <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: "20px 22px" }}>
-                    <SectionTitle tag={m.sdrStatus === "green" ? "🟢 SAUDÁVEL" : "🔴 CRÍTICO"} metricKey="sdrThisWeek">Volume SDR</SectionTitle>
+                    <SectionTitle tag={m.sdrStatus === "green" ? "SAUDAVEL" : "CRITICO"} metricKey="sdrThisWeek">Volume SDR</SectionTitle>
                     <ResponsiveContainer width="100%" height={200}>
                         <ComposedChart data={m.sdrWeeklyHistory} margin={{ top: 20, right: 4, bottom: 0, left: -20 }}>
                             <CartesianGrid strokeDasharray="3 3" stroke={T.border} vertical={false} />
@@ -93,7 +216,7 @@ export function OverviewTab({ m }: OverviewTabProps) {
                 </div>
 
                 <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: "20px 22px" }}>
-                    <SectionTitle tag={m.convStatus === "red" ? "🔴 CRÍTICO" : m.convStatus === "orange" ? "🟡 ATENÇÃO" : "🟢 SAUDÁVEL"} metricKey="conv_curr">Conversão Closer MM4s</SectionTitle>
+                    <SectionTitle tag={m.convStatus === "red" ? "CRITICO" : m.convStatus === "orange" ? "ATENCAO" : "SAUDAVEL"} metricKey="conv_curr">Conversao Closer</SectionTitle>
                     <ResponsiveContainer width="100%" height={200}>
                         <BarChart data={m.convTrend} margin={{ top: 4, right: 4, bottom: 0, left: -20 }}>
                             <CartesianGrid strokeDasharray="3 3" stroke={T.border} vertical={false} />
@@ -144,7 +267,7 @@ export function OverviewTab({ m }: OverviewTabProps) {
                         </div>
                     ))}
                     {m.pipeByStage.length === 0 && (
-                        <div style={{ fontSize: 13, color: T.muted, padding: "20px 0" }}>Nenhum negócio ativo no momento.</div>
+                        <div style={{ fontSize: 13, color: T.muted, padding: "20px 0" }}>Nenhum negocio ativo no momento.</div>
                     )}
                 </div>
             </div>

@@ -115,6 +115,7 @@ export default function Dashboard() {
     const [wonDeals, setWonDeals] = useState<WonDeal[]>([]);
     const [closerDeals, setCloserDeals] = useState<WonDeal[]>([]);
     const [acFieldMap, setAcFieldMap] = useState<Record<string, string>>({});
+    const [acStageMap, setAcStageMap] = useState<Record<string, string>>({});
     const [lastUpdate, setLastUpdate] = useState<string | null>(null);
     const [isChangelogOpen, setIsChangelogOpen] = useState(false);
 
@@ -128,6 +129,7 @@ export default function Dashboard() {
                 fetchStagesFromDb(),
             ]);
             setAcFieldMap(fieldMap);
+            setAcStageMap(stageMap);
 
             setLoadStep("Carregando leads SDR (últimos 180 dias)…");
             const sdrP1 = await fetchAllDealsFromDb("1", 180);
@@ -216,7 +218,7 @@ export default function Dashboard() {
         <div style={{ background: T.bg, minHeight: "100vh", color: T.white, fontFamily: "'Trebuchet MS', 'Lucida Grande', sans-serif" }}>
             <Header {...headerProps} />
             <div style={{ maxWidth: 1200, margin: "0 auto", padding: "24px 28px 48px" }}>
-                {tab === "overview" && <OverviewTab m={metrics} />}
+                {tab === "overview" && <OverviewTab sdrDeals={sdrDeals} closerDeals={closerDeals} wonDeals={wonDeals} fieldMap={acFieldMap} stageMap={acStageMap} />}
                 {tab === "sdr" && <SDRTab deals={sdrDeals} fieldMap={acFieldMap} />}
                 {tab === "funnel" && <FunnelTab m={metrics} />}
                 {tab === "closer" && <CloserTab m={metrics} />}
