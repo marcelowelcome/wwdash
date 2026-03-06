@@ -11,14 +11,26 @@ import { PipelineTab } from "./dashboard/PipelineTab";
 import { DictionaryTab } from "./dashboard/DictionaryTab";
 import { ContratosTab } from "./dashboard/ContratosTab";
 import { PerfilScoreTab } from "./dashboard/PerfilScoreTab";
+import { FunnelMetaTab } from "./dashboard/FunnelMetaTab";
 import { ChangelogModal } from "./dashboard/ChangelogModal";
 import { CURRENT_VERSION } from "@/lib/versions";
 import { type WonDeal } from "@/lib/schemas";
 
-type TabId = "overview" | "funnel" | "sdr" | "closer" | "pipeline" | "contratos" | "perfil-score" | "dictionary";
+// Deduplicate deals by ID
+function deduplicateDeals(deals: WonDeal[]): WonDeal[] {
+    const seen = new Set<string>();
+    return deals.filter((d) => {
+        if (seen.has(d.id)) return false;
+        seen.add(d.id);
+        return true;
+    });
+}
+
+type TabId = "overview" | "funnel" | "sdr" | "closer" | "pipeline" | "contratos" | "perfil-score" | "dictionary" | "funnel-metas";
 
 const TABS: { id: TabId; label: string }[] = [
     { id: "overview", label: "Visão Geral" },
+    { id: "funnel-metas", label: "Funil" },
     { id: "sdr", label: "SDR" },
     { id: "closer", label: "Closer" },
     { id: "pipeline", label: "Pipeline" },
@@ -43,7 +55,7 @@ function Header({ tab, setTab, metrics, loading, lastUpdate, onRefresh, onVersio
         <div style={{ background: T.surface, borderBottom: `1px solid ${T.border}`, padding: "0 28px" }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", maxWidth: 1200, margin: "0 auto", padding: "16px 0" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-                    <div style={{ width: 38, height: 38, borderRadius: 10, background: `linear-gradient(135deg, ${T.berry}, ${T.gold})`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 900, color: T.white, fontFamily: "Georgia, serif" }}>WW</div>
+                    <img src="/logo-ww.png" alt="Welcome Weddings" style={{ height: 90, width: "auto", objectFit: "contain" }} />
                     <div>
                         <div style={{ fontSize: 15, fontWeight: 700, color: T.white }}>Welcome Weddings</div>
                         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -224,6 +236,7 @@ export default function Dashboard() {
                 {tab === "contratos" && <ContratosTab deals={wonDeals} fieldMap={acFieldMap} />}
                 {tab === "perfil-score" && <PerfilScoreTab wonDeals={wonDeals} closerDeals={closerDeals} sdrDeals={sdrDeals} fieldMap={acFieldMap} />}
                 {tab === "dictionary" && <DictionaryTab />}
+                {tab === "funnel-metas" && <FunnelMetaTab allDeals={deduplicateDeals([...sdrDeals, ...closerDeals, ...wonDeals])} />}
             </div>
             <ChangelogModal
                 isOpen={isChangelogOpen}
