@@ -17,6 +17,7 @@ interface FunnelMetaTableProps {
     previousMetrics: FunnelMetrics | null;
     monthProgress: number;
     cpl: number;
+    totalAdsSpend?: number;
     viewMode?: ViewMode;
 }
 
@@ -65,7 +66,7 @@ function isInWwMqlPipeline(d: WonDeal): boolean {
     return false;
 }
 
-export function FunnelMetaTable({ deals, year, month, dateRange, target, previousMetrics, monthProgress, cpl, viewMode = "wedding" }: FunnelMetaTableProps) {
+export function FunnelMetaTable({ deals, year, month, dateRange, target, previousMetrics, monthProgress, cpl, totalAdsSpend = 0, viewMode = "wedding" }: FunnelMetaTableProps) {
     const [modalOpen, setModalOpen] = useState(false);
     const [modalTitle, setModalTitle] = useState("");
     const [modalDeals, setModalDeals] = useState<WonDeal[]>([]);
@@ -278,15 +279,16 @@ export function FunnelMetaTable({ deals, year, month, dateRange, target, previou
         ? [previousMetrics.leads, previousMetrics.mql, previousMetrics.agendamento, previousMetrics.reunioes, previousMetrics.qualificado, previousMetrics.closerAgendada, previousMetrics.closerRealizada, previousMetrics.vendas]
         : Array(8).fill("-");
 
+    // Custos = Total Ads Spend / Realizado (custo por unidade em cada etapa)
     const custos = [
-        formatCurrency(cpl * metrics.leads),
-        formatCurrency(cpl * 1.5 * metrics.mql),
-        formatCurrency(cpl * 2 * metrics.agendamento),
-        formatCurrency(cpl * 2.5 * metrics.reunioes),
-        formatCurrency(cpl * 3 * metrics.qualificado),
-        formatCurrency(cpl * 3.5 * metrics.closerAgendada),
-        formatCurrency(cpl * 4 * metrics.closerRealizada),
-        "-",
+        metrics.leads > 0 ? formatCurrency(totalAdsSpend / metrics.leads) : "-",
+        metrics.mql > 0 ? formatCurrency(totalAdsSpend / metrics.mql) : "-",
+        metrics.agendamento > 0 ? formatCurrency(totalAdsSpend / metrics.agendamento) : "-",
+        metrics.reunioes > 0 ? formatCurrency(totalAdsSpend / metrics.reunioes) : "-",
+        metrics.qualificado > 0 ? formatCurrency(totalAdsSpend / metrics.qualificado) : "-",
+        metrics.closerAgendada > 0 ? formatCurrency(totalAdsSpend / metrics.closerAgendada) : "-",
+        metrics.closerRealizada > 0 ? formatCurrency(totalAdsSpend / metrics.closerRealizada) : "-",
+        metrics.vendas > 0 ? formatCurrency(totalAdsSpend / metrics.vendas) : "-",
     ];
 
     const rows = [

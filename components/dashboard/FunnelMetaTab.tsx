@@ -307,6 +307,7 @@ export function FunnelMetaTab({ allDeals }: FunnelMetaTabProps) {
                     previousMetrics={previousMetrics}
                     monthProgress={monthProgress}
                     cpl={cpl}
+                    totalAdsSpend={adsData?.total.spend || 0}
                     viewMode={viewMode}
                 />
             )}
