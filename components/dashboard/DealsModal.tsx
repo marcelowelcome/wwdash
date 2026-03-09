@@ -7,7 +7,7 @@ import { type WonDeal } from "@/lib/schemas";
 
 type StageKey = "leads" | "mql" | "agendamento" | "reunioes" | "qualificado" | "closerAgendada" | "closerRealizada" | "vendas";
 
-const AC_DEAL_URL = "https://welcometrips.api-us1.com/app/deals";
+const AC_DEAL_URL = "https://welcometrips.activehosted.com/app/deals";
 
 interface DealsModalProps {
     isOpen: boolean;
