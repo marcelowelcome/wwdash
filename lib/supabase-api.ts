@@ -6,6 +6,12 @@ export const SDR_GROUP_ID = "1";
 export const CLOSER_GROUP_ID = "3";
 export const TRAINING_MOTIVE = "Para closer ter mais reuniões";
 
+// Fallback: map group_id → pipeline name for deals missing group_id
+const GROUP_TO_PIPELINE: Record<string, string> = {
+    "1": "SDR Weddings",
+    "3": "Closer Weddings",
+};
+
 // Internal IDs for field mapping (since we don't have AC field IDs)
 const FQ_ID = "custom_field_qual";
 const FL_ID = "custom_field_loss";
@@ -44,11 +50,17 @@ export async function fetchAllDealsFromDb(
     let from = 0;
     const limit = 1000;
 
+    // Build filter: match group_id OR pipeline name (fallback for deals missing group_id)
+    const pipelineName = GROUP_TO_PIPELINE[groupId];
+    const groupFilter = pipelineName
+        ? `group_id.eq.${groupId},pipeline.eq.${pipelineName}`
+        : `group_id.eq.${groupId}`;
+
     while (true) {
         const { data, error } = await supabase
             .from("deals")
             .select("*")
-            .eq("group_id", groupId)
+            .or(groupFilter)
             .gte("created_at", afterStr)
             .order("created_at", { ascending: false })
             .range(from, from + limit - 1);
@@ -78,7 +90,7 @@ export async function fetchAllDealsFromDb(
             mdate: row.updated_at || undefined,
             status: statusMap[row.status] || "1",
             stage: row.stage || "Padrão",
-            group_id: row.group_id,
+            group_id: row.group_id || groupId,
             stage_id: row.stage_id,
             owner_id: row.owner_id,
             data_fechamento: row.ww_closer_data_hora_ganho || row.data_fechamento,
