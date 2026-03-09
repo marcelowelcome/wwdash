@@ -1,12 +1,13 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import { T } from "./theme";
 import { DealsModal } from "./DealsModal";
 import { type WonDeal, type FunnelMetrics, type MonthlyTarget } from "@/lib/schemas";
 import { formatPercent, formatCurrency, calcAchievement, calcShouldBe, calcFunnelCVR, isInMonth, isCreatedInMonth } from "@/lib/funnel-utils";
 
 type ViewMode = "wedding" | "elopement" | "total";
+type TargetField = "leads" | "mql" | "agendamento" | "reunioes" | "qualificado" | "closer_agendada" | "closer_realizada" | "vendas" | "cpl";
 
 interface FunnelMetaTableProps {
     deals: WonDeal[];
@@ -19,6 +20,103 @@ interface FunnelMetaTableProps {
     cpl: number;
     totalAdsSpend?: number;
     viewMode?: ViewMode;
+    onTargetUpdate?: (field: TargetField, value: number) => Promise<void>;
+}
+
+// Editable cell component for inline editing
+function EditableCell({
+    value,
+    field,
+    onSave
+}: {
+    value: number;
+    field: TargetField;
+    onSave?: (field: TargetField, value: number) => Promise<void>;
+}) {
+    const [isEditing, setIsEditing] = useState(false);
+    const [editValue, setEditValue] = useState(String(value));
+    const [isSaving, setIsSaving] = useState(false);
+    const inputRef = useRef<HTMLInputElement>(null);
+
+    useEffect(() => {
+        if (isEditing && inputRef.current) {
+            inputRef.current.focus();
+            inputRef.current.select();
+        }
+    }, [isEditing]);
+
+    useEffect(() => {
+        setEditValue(String(value));
+    }, [value]);
+
+    const handleSave = async () => {
+        const numValue = Math.max(0, parseInt(editValue, 10) || 0);
+        if (numValue !== value && onSave) {
+            setIsSaving(true);
+            await onSave(field, numValue);
+            setIsSaving(false);
+        }
+        setIsEditing(false);
+    };
+
+    const handleKeyDown = (e: React.KeyboardEvent) => {
+        if (e.key === "Enter") {
+            handleSave();
+        } else if (e.key === "Escape") {
+            setEditValue(String(value));
+            setIsEditing(false);
+        }
+    };
+
+    if (!onSave) {
+        return <span>{value}</span>;
+    }
+
+    if (isEditing) {
+        return (
+            <input
+                ref={inputRef}
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                value={editValue}
+                onChange={(e) => {
+                    const val = e.target.value.replace(/[^0-9]/g, "");
+                    setEditValue(val);
+                }}
+                onBlur={handleSave}
+                onKeyDown={handleKeyDown}
+                style={{
+                    width: 60,
+                    padding: "4px 6px",
+                    fontSize: 12,
+                    background: T.card,
+                    border: `1px solid ${T.gold}`,
+                    borderRadius: 4,
+                    color: T.white,
+                    textAlign: "center",
+                    outline: "none",
+                }}
+            />
+        );
+    }
+
+    return (
+        <span
+            onClick={() => setIsEditing(true)}
+            style={{
+                cursor: "pointer",
+                padding: "2px 8px",
+                borderRadius: 4,
+                transition: "background 0.15s",
+                opacity: isSaving ? 0.5 : 1,
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.background = T.border)}
+            onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+        >
+            {value}
+        </span>
+    );
 }
 
 // Helper to check if date is within custom range
@@ -66,7 +164,10 @@ function isInWwMqlPipeline(d: WonDeal): boolean {
     return false;
 }
 
-export function FunnelMetaTable({ deals, year, month, dateRange, target, previousMetrics, monthProgress, cpl, totalAdsSpend = 0, viewMode = "wedding" }: FunnelMetaTableProps) {
+// Map column index to MonthlyTarget field
+const TARGET_FIELDS: TargetField[] = ["leads", "mql", "agendamento", "reunioes", "qualificado", "closer_agendada", "closer_realizada", "vendas"];
+
+export function FunnelMetaTable({ deals, year, month, dateRange, target, previousMetrics, monthProgress, cpl, totalAdsSpend = 0, viewMode = "wedding", onTargetUpdate }: FunnelMetaTableProps) {
     const [modalOpen, setModalOpen] = useState(false);
     const [modalTitle, setModalTitle] = useState("");
     const [modalDeals, setModalDeals] = useState<WonDeal[]>([]);
@@ -292,7 +393,7 @@ export function FunnelMetaTable({ deals, year, month, dateRange, target, previou
     ];
 
     const rows = [
-        { label: "Planejado", data: planejado },
+        { label: "Planejado", data: planejado, editable: true },
         { label: "Realizado", data: realizado, clickable: true },
         { label: "Atingimento (%)", data: atingimento },
         { label: "Deveria", data: deveria },
@@ -334,6 +435,7 @@ export function FunnelMetaTable({ deals, year, month, dateRange, target, previou
                                 <td style={{ ...tdStyle, fontWeight: 600, color: T.muted }}>{row.label}</td>
                                 {row.data.map((value, colIndex) => {
                                     const isClickable = row.clickable && colIndex < 8;
+                                    const isEditable = row.editable && colIndex < 8;
                                     const isNegative = typeof value === "string" && value.startsWith("-") && value !== "-";
 
                                     return (
@@ -349,7 +451,15 @@ export function FunnelMetaTable({ deals, year, month, dateRange, target, previou
                                                 textUnderlineOffset: 3,
                                             }}
                                         >
-                                            {value}
+                                            {isEditable ? (
+                                                <EditableCell
+                                                    value={value as number}
+                                                    field={TARGET_FIELDS[colIndex]}
+                                                    onSave={onTargetUpdate}
+                                                />
+                                            ) : (
+                                                value
+                                            )}
                                         </td>
                                     );
                                 })}
