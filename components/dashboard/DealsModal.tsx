@@ -1,11 +1,13 @@
 "use client";
 
 import { useEffect, useRef, useState, useMemo } from "react";
-import { X, Download, Search } from "lucide-react";
+import { X, Download, Search, ExternalLink } from "lucide-react";
 import { T } from "./theme";
 import { type WonDeal } from "@/lib/schemas";
 
 type StageKey = "leads" | "mql" | "agendamento" | "reunioes" | "qualificado" | "closerAgendada" | "closerRealizada" | "vendas";
+
+const AC_DEAL_URL = "https://welcometrips.api-us1.com/app/deals";
 
 interface DealsModalProps {
     isOpen: boolean;
@@ -126,18 +128,20 @@ export function DealsModal({ isOpen, onClose, title, deals, stageKey }: DealsMod
     const extraColumns = getExtraColumns();
 
     const exportToCSV = () => {
-        const baseHeaders = ["ID", "Pipeline", "Stage", "Status", "Criado"];
+        const baseHeaders = ["ID", "Nome", "Pipeline", "Stage", "Status", "Criado"];
         const extraHeaders = extraColumns.map((c) => c.header);
-        const headers = [...baseHeaders, ...extraHeaders, "Destino"];
+        const headers = [...baseHeaders, ...extraHeaders, "Destino", "Link AC"];
 
         const rows = filteredDeals.map((d) => [
             d.id,
+            d.title || "",
             d.pipeline || "",
             d.stage || "",
             d.status === "0" ? "Won" : d.status === "2" ? "Lost" : "Open",
             d.cdate ? new Date(d.cdate).toLocaleDateString("pt-BR") : "",
             ...extraColumns.map((c) => c.getValue(d)),
             d.destino || "",
+            `${AC_DEAL_URL}/${d.id}`,
         ]);
 
         const csvContent = [headers.join(";"), ...rows.map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(";"))].join("\n");
@@ -264,6 +268,7 @@ export function DealsModal({ isOpen, onClose, title, deals, stageKey }: DealsMod
                         <thead>
                             <tr>
                                 <th style={{ ...thStyle }}>ID</th>
+                                <th style={{ ...thStyle }}>Nome</th>
                                 <th style={{ ...thStyle }}>Pipeline</th>
                                 <th style={{ ...thStyle }}>Stage</th>
                                 <th style={{ ...thStyle }}>Status</th>
@@ -273,12 +278,16 @@ export function DealsModal({ isOpen, onClose, title, deals, stageKey }: DealsMod
                                         {col.header}
                                     </th>
                                 ))}
+                                <th style={{ ...thStyle }}></th>
                             </tr>
                         </thead>
                         <tbody>
                             {filteredDeals.map((deal) => (
                                 <tr key={deal.id}>
                                     <td style={{ ...tdStyle, fontFamily: "monospace", fontSize: 10 }}>{deal.id}</td>
+                                    <td style={{ ...tdStyle, maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={deal.title || "-"}>
+                                        {deal.title || "-"}
+                                    </td>
                                     <td style={{ ...tdStyle }}>{deal.pipeline || "-"}</td>
                                     <td style={{ ...tdStyle }}>{deal.stage || "-"}</td>
                                     <td style={{ ...tdStyle }}>{getStatusBadge(deal.status)}</td>
@@ -288,11 +297,29 @@ export function DealsModal({ isOpen, onClose, title, deals, stageKey }: DealsMod
                                             {col.getValue(deal)}
                                         </td>
                                     ))}
+                                    <td style={{ ...tdStyle }}>
+                                        <a
+                                            href={`${AC_DEAL_URL}/${deal.id}`}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            style={{
+                                                display: "flex",
+                                                alignItems: "center",
+                                                gap: 4,
+                                                color: T.gold,
+                                                textDecoration: "none",
+                                                fontSize: 10,
+                                            }}
+                                            title="Abrir no ActiveCampaign"
+                                        >
+                                            <ExternalLink size={12} />
+                                        </a>
+                                    </td>
                                 </tr>
                             ))}
                             {filteredDeals.length === 0 && (
                                 <tr>
-                                    <td colSpan={5 + extraColumns.length} style={{ ...tdStyle, textAlign: "center", padding: 32, color: T.muted }}>
+                                    <td colSpan={7 + extraColumns.length} style={{ ...tdStyle, textAlign: "center", padding: 32, color: T.muted }}>
                                         {search ? "Nenhum resultado encontrado" : "Nenhum deal encontrado"}
                                     </td>
                                 </tr>
