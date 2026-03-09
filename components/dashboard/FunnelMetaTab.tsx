@@ -98,6 +98,7 @@ export function FunnelMetaTab({ allDeals }: FunnelMetaTabProps) {
     const now = new Date();
     const [selectedYear, setSelectedYear] = useState(now.getFullYear());
     const [selectedMonth, setSelectedMonth] = useState(now.getMonth() + 1);
+    const [dateRange, setDateRange] = useState<{ start: Date; end: Date } | null>(null);
     const [target, setTarget] = useState<MonthlyTarget | null>(null);
     const [monthDeals, setMonthDeals] = useState<WonDeal[]>([]);
     const [loading, setLoading] = useState(false);
@@ -111,6 +112,11 @@ export function FunnelMetaTab({ allDeals }: FunnelMetaTabProps) {
     const handleMonthChange = (year: number, month: number) => {
         setSelectedYear(year);
         setSelectedMonth(month);
+        setDateRange(null); // Clear custom date range when selecting month
+    };
+
+    const handleDateRangeChange = (start: Date, end: Date) => {
+        setDateRange({ start, end });
     };
 
     const loadMonthData = useCallback(async () => {
@@ -241,7 +247,13 @@ export function FunnelMetaTab({ allDeals }: FunnelMetaTabProps) {
                         </button>
                     </div>
                 </div>
-                <MonthSelector selectedYear={selectedYear} selectedMonth={selectedMonth} onChange={handleMonthChange} />
+                <MonthSelector
+                    selectedYear={selectedYear}
+                    selectedMonth={selectedMonth}
+                    onChange={handleMonthChange}
+                    onDateRangeChange={handleDateRangeChange}
+                    dateRange={dateRange}
+                />
             </div>
 
             {/* Loading state */}
@@ -290,6 +302,7 @@ export function FunnelMetaTab({ allDeals }: FunnelMetaTabProps) {
                     deals={combinedDeals}
                     year={selectedYear}
                     month={selectedMonth}
+                    dateRange={dateRange}
                     target={target}
                     previousMetrics={previousMetrics}
                     monthProgress={monthProgress}

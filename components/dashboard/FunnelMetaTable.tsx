@@ -12,11 +12,23 @@ interface FunnelMetaTableProps {
     deals: WonDeal[];
     year: number;
     month: number;
+    dateRange?: { start: Date; end: Date } | null;
     target: MonthlyTarget | null;
     previousMetrics: FunnelMetrics | null;
     monthProgress: number;
     cpl: number;
     viewMode?: ViewMode;
+}
+
+// Helper to check if date is within custom range
+function isInDateRange(dateStr: string | null | undefined, range: { start: Date; end: Date }): boolean {
+    if (!dateStr) return false;
+    const date = new Date(dateStr);
+    const start = new Date(range.start);
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(range.end);
+    end.setHours(23, 59, 59, 999);
+    return date >= start && date <= end;
 }
 
 const FUNNEL_COLUMNS = ["Leads", "MQL", "Agendamento", "Reunioes", "Qualificado", "Closer Agendada", "Closer Realizada", "Vendas"];
@@ -53,11 +65,26 @@ function isInWwMqlPipeline(d: WonDeal): boolean {
     return false;
 }
 
-export function FunnelMetaTable({ deals, year, month, target, previousMetrics, monthProgress, cpl, viewMode = "wedding" }: FunnelMetaTableProps) {
+export function FunnelMetaTable({ deals, year, month, dateRange, target, previousMetrics, monthProgress, cpl, viewMode = "wedding" }: FunnelMetaTableProps) {
     const [modalOpen, setModalOpen] = useState(false);
     const [modalTitle, setModalTitle] = useState("");
     const [modalDeals, setModalDeals] = useState<WonDeal[]>([]);
     const [modalStageKey, setModalStageKey] = useState<StageKey>("leads");
+
+    // Use custom date range or month-based filtering
+    const checkDateInPeriod = (dateStr: string | null | undefined): boolean => {
+        if (dateRange) {
+            return isInDateRange(dateStr, dateRange);
+        }
+        return isInMonth(dateStr, year, month);
+    };
+
+    const checkCreatedInPeriod = (dateStr: string | null | undefined): boolean => {
+        if (dateRange) {
+            return isInDateRange(dateStr, dateRange);
+        }
+        return isCreatedInMonth(dateStr, year, month);
+    };
 
     const getDealsForStage = (stage: StageKey): WonDeal[] => {
         // Elopement mode: only Elopement deals
@@ -65,32 +92,32 @@ export function FunnelMetaTable({ deals, year, month, target, previousMetrics, m
             const elopDeals = deals.filter((d) => isElopement(d));
             switch (stage) {
                 case "leads":
-                    return elopDeals.filter((d) => isCreatedInMonth(d.cdate, year, month));
+                    return elopDeals.filter((d) => checkCreatedInPeriod(d.cdate));
                 case "mql":
-                    return elopDeals.filter((d) => isCreatedInMonth(d.cdate, year, month));
+                    return elopDeals.filter((d) => checkCreatedInPeriod(d.cdate));
                 case "agendamento":
-                    return elopDeals.filter((d) => isInMonth(d.data_reuniao_1, year, month));
+                    return elopDeals.filter((d) => checkDateInPeriod(d.data_reuniao_1));
                 case "reunioes":
                     return elopDeals.filter(
                         (d) =>
-                            isInMonth(d.data_reuniao_1, year, month) &&
+                            checkDateInPeriod(d.data_reuniao_1) &&
                             d.como_foi_feita_a_1a_reuniao !== null &&
                             d.como_foi_feita_a_1a_reuniao !== "" &&
                             d.como_foi_feita_a_1a_reuniao !== "Nao teve reuniao"
                     );
                 case "qualificado":
-                    return elopDeals.filter((d) => isInMonth(d.data_qualificado, year, month));
+                    return elopDeals.filter((d) => checkDateInPeriod(d.data_qualificado));
                 case "closerAgendada":
-                    return elopDeals.filter((d) => isInMonth(d.data_horario_agendamento_closer, year, month));
+                    return elopDeals.filter((d) => checkDateInPeriod(d.data_horario_agendamento_closer));
                 case "closerRealizada":
                     return elopDeals.filter(
                         (d) =>
-                            isInMonth(d.data_horario_agendamento_closer, year, month) &&
+                            checkDateInPeriod(d.data_horario_agendamento_closer) &&
                             d.reuniao_closer !== null &&
                             d.reuniao_closer !== ""
                     );
                 case "vendas":
-                    return elopDeals.filter((d) => isInMonth(d.data_fechamento, year, month));
+                    return elopDeals.filter((d) => checkDateInPeriod(d.data_fechamento));
                 default:
                     return [];
             }
@@ -100,32 +127,32 @@ export function FunnelMetaTable({ deals, year, month, target, previousMetrics, m
         if (viewMode === "total") {
             switch (stage) {
                 case "leads":
-                    return deals.filter((d) => isInWwLeadsPipeline(d) && isCreatedInMonth(d.cdate, year, month));
+                    return deals.filter((d) => isInWwLeadsPipeline(d) && checkCreatedInPeriod(d.cdate));
                 case "mql":
-                    return deals.filter((d) => isInWwLeadsPipeline(d) && isCreatedInMonth(d.cdate, year, month));
+                    return deals.filter((d) => isInWwLeadsPipeline(d) && checkCreatedInPeriod(d.cdate));
                 case "agendamento":
-                    return deals.filter((d) => isInMonth(d.data_reuniao_1, year, month));
+                    return deals.filter((d) => checkDateInPeriod(d.data_reuniao_1));
                 case "reunioes":
                     return deals.filter(
                         (d) =>
-                            isInMonth(d.data_reuniao_1, year, month) &&
+                            checkDateInPeriod(d.data_reuniao_1) &&
                             d.como_foi_feita_a_1a_reuniao !== null &&
                             d.como_foi_feita_a_1a_reuniao !== "" &&
                             d.como_foi_feita_a_1a_reuniao !== "Nao teve reuniao"
                     );
                 case "qualificado":
-                    return deals.filter((d) => isInMonth(d.data_qualificado, year, month));
+                    return deals.filter((d) => checkDateInPeriod(d.data_qualificado));
                 case "closerAgendada":
-                    return deals.filter((d) => isInMonth(d.data_horario_agendamento_closer, year, month));
+                    return deals.filter((d) => checkDateInPeriod(d.data_horario_agendamento_closer));
                 case "closerRealizada":
                     return deals.filter(
                         (d) =>
-                            isInMonth(d.data_horario_agendamento_closer, year, month) &&
+                            checkDateInPeriod(d.data_horario_agendamento_closer) &&
                             d.reuniao_closer !== null &&
                             d.reuniao_closer !== ""
                     );
                 case "vendas":
-                    return deals.filter((d) => isInMonth(d.data_fechamento, year, month));
+                    return deals.filter((d) => checkDateInPeriod(d.data_fechamento));
                 default:
                     return [];
             }
@@ -135,34 +162,34 @@ export function FunnelMetaTable({ deals, year, month, target, previousMetrics, m
         const wwDeals = deals.filter((d) => !isElopement(d));
         switch (stage) {
             case "leads":
-                return wwDeals.filter((d) => isInWwPipeline(d) && isCreatedInMonth(d.cdate, year, month));
+                return wwDeals.filter((d) => isInWwPipeline(d) && checkCreatedInPeriod(d.cdate));
             case "mql":
-                return wwDeals.filter((d) => isInWwMqlPipeline(d) && isCreatedInMonth(d.cdate, year, month));
+                return wwDeals.filter((d) => isInWwMqlPipeline(d) && checkCreatedInPeriod(d.cdate));
             case "agendamento":
-                return wwDeals.filter((d) => isInWwPipeline(d) && isInMonth(d.data_reuniao_1, year, month));
+                return wwDeals.filter((d) => isInWwPipeline(d) && checkDateInPeriod(d.data_reuniao_1));
             case "reunioes":
                 return wwDeals.filter(
                     (d) =>
                         isInWwPipeline(d) &&
-                        isInMonth(d.data_reuniao_1, year, month) &&
+                        checkDateInPeriod(d.data_reuniao_1) &&
                         d.como_foi_feita_a_1a_reuniao !== null &&
                         d.como_foi_feita_a_1a_reuniao !== "" &&
                         d.como_foi_feita_a_1a_reuniao !== "Nao teve reuniao"
                 );
             case "qualificado":
-                return wwDeals.filter((d) => isInWwPipeline(d) && isInMonth(d.data_qualificado, year, month));
+                return wwDeals.filter((d) => isInWwPipeline(d) && checkDateInPeriod(d.data_qualificado));
             case "closerAgendada":
-                return wwDeals.filter((d) => isInWwPipeline(d) && isInMonth(d.data_horario_agendamento_closer, year, month));
+                return wwDeals.filter((d) => isInWwPipeline(d) && checkDateInPeriod(d.data_horario_agendamento_closer));
             case "closerRealizada":
                 return wwDeals.filter(
                     (d) =>
                         isInWwPipeline(d) &&
-                        isInMonth(d.data_horario_agendamento_closer, year, month) &&
+                        checkDateInPeriod(d.data_horario_agendamento_closer) &&
                         d.reuniao_closer !== null &&
                         d.reuniao_closer !== ""
                 );
             case "vendas":
-                return wwDeals.filter((d) => isInMonth(d.data_fechamento, year, month));
+                return wwDeals.filter((d) => checkDateInPeriod(d.data_fechamento));
             default:
                 return [];
         }
@@ -179,7 +206,7 @@ export function FunnelMetaTable({ deals, year, month, target, previousMetrics, m
             closerRealizada: getDealsForStage("closerRealizada").length,
             vendas: getDealsForStage("vendas").length,
         }),
-        [deals, year, month, viewMode]
+        [deals, year, month, dateRange, viewMode]
     );
 
     const cvr = calcFunnelCVR(metrics);
