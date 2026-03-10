@@ -10,6 +10,7 @@ import {
     fetchAllFunnelDealsForMonth,
     fetchVendasForMonth,
     fetchAllAdsSpend,
+    upsertMonthlyTarget,
     type AdsSpendData,
 } from "@/lib/supabase-api";
 import { type WonDeal, type MonthlyTarget, type FunnelMetrics } from "@/lib/schemas";
@@ -98,6 +99,7 @@ export function FunnelMetaTab({ allDeals }: FunnelMetaTabProps) {
     const now = new Date();
     const [selectedYear, setSelectedYear] = useState(now.getFullYear());
     const [selectedMonth, setSelectedMonth] = useState(now.getMonth() + 1);
+    const [dateRange, setDateRange] = useState<{ start: Date; end: Date } | null>(null);
     const [target, setTarget] = useState<MonthlyTarget | null>(null);
     const [monthDeals, setMonthDeals] = useState<WonDeal[]>([]);
     const [loading, setLoading] = useState(false);
@@ -111,6 +113,11 @@ export function FunnelMetaTab({ allDeals }: FunnelMetaTabProps) {
     const handleMonthChange = (year: number, month: number) => {
         setSelectedYear(year);
         setSelectedMonth(month);
+        setDateRange(null); // Clear custom date range when selecting month
+    };
+
+    const handleDateRangeChange = (start: Date, end: Date) => {
+        setDateRange({ start, end });
     };
 
     const loadMonthData = useCallback(async () => {
@@ -183,6 +190,35 @@ export function FunnelMetaTab({ allDeals }: FunnelMetaTabProps) {
         return [...allDeals, ...newDeals];
     }, [allDeals, monthDeals]);
 
+    // Handle target field update (inline editing)
+    const handleTargetUpdate = useCallback(async (
+        field: "leads" | "mql" | "agendamento" | "reunioes" | "qualificado" | "closer_agendada" | "closer_realizada" | "vendas" | "cpl",
+        value: number
+    ) => {
+        const monthStr = `${selectedYear}-${String(selectedMonth).padStart(2, "0")}-01`;
+        const pipelineType = viewMode === "elopement" ? "elopement" : "wedding";
+
+        const updatedTarget: MonthlyTarget = {
+            month: monthStr,
+            pipeline_type: pipelineType,
+            leads: target?.leads ?? 0,
+            mql: target?.mql ?? 0,
+            agendamento: target?.agendamento ?? 0,
+            reunioes: target?.reunioes ?? 0,
+            qualificado: target?.qualificado ?? 0,
+            closer_agendada: target?.closer_agendada ?? 0,
+            closer_realizada: target?.closer_realizada ?? 0,
+            vendas: target?.vendas ?? 0,
+            cpl: target?.cpl ?? 0,
+            [field]: value,
+        };
+
+        const success = await upsertMonthlyTarget(updatedTarget);
+        if (success) {
+            setTarget(updatedTarget);
+        }
+    }, [selectedYear, selectedMonth, viewMode, target]);
+
     return (
         <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
             {/* Header */}
@@ -241,7 +277,13 @@ export function FunnelMetaTab({ allDeals }: FunnelMetaTabProps) {
                         </button>
                     </div>
                 </div>
-                <MonthSelector selectedYear={selectedYear} selectedMonth={selectedMonth} onChange={handleMonthChange} />
+                <MonthSelector
+                    selectedYear={selectedYear}
+                    selectedMonth={selectedMonth}
+                    onChange={handleMonthChange}
+                    onDateRangeChange={handleDateRangeChange}
+                    dateRange={dateRange}
+                />
             </div>
 
             {/* Loading state */}
@@ -290,11 +332,14 @@ export function FunnelMetaTab({ allDeals }: FunnelMetaTabProps) {
                     deals={combinedDeals}
                     year={selectedYear}
                     month={selectedMonth}
+                    dateRange={dateRange}
                     target={target}
                     previousMetrics={previousMetrics}
                     monthProgress={monthProgress}
                     cpl={cpl}
+                    totalAdsSpend={adsData?.total.spend || 0}
                     viewMode={viewMode}
+                    onTargetUpdate={handleTargetUpdate}
                 />
             )}
 
@@ -310,7 +355,7 @@ export function FunnelMetaTab({ allDeals }: FunnelMetaTabProps) {
                         color: T.orange,
                     }}
                 >
-                    Nenhuma meta definida para este mês. Os valores de "Planejado" estão zerados.
+                    Nenhuma meta definida para este mês. Clique nos valores da linha "Planejado" para definir as metas.
                 </div>
             )}
         </div>

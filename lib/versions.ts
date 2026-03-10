@@ -7,14 +7,27 @@ export interface VersionEntry {
 
 export const VERSION_HISTORY: VersionEntry[] = [
     {
+        version: "1.6.1",
+        date: "09/03/2026",
+        description: "Google Ads integrado, seletor de período e melhorias no modal.",
+        changes: [
+            "Integração completa com Google Ads API v20 com cron diário às 9h UTC.",
+            "Importação de dados históricos de Google Ads (27 meses: Jan/2024 a Mar/2026).",
+            "Modal de deals agora exibe nome do deal e link direto para ActiveCampaign.",
+            "Novo seletor de período customizado no calendário (além da seleção mensal).",
+            "Custos na tabela agora mostram Total Ads / Realizado (custo por unidade em cada etapa).",
+            "Exportação CSV inclui nome do deal e link AC.",
+        ],
+    },
+    {
         version: "1.6.0",
         date: "06/03/2026",
         description: "Funil de Metas com separação Wedding/Elopement e integração Ads.",
         changes: [
-            "Nova aba 'Funil Metas' com tabela completa de métricas do funil de vendas.",
+            "Nova aba 'Funil' com tabela completa de métricas do funil de vendas.",
             "Toggle de 3 visões: Wedding (apenas casamentos), Elopement (apenas elopements), Total (combinado).",
             "Separação completa de dados Wedding e Elopement em todas as métricas.",
-            "Integração de dados de Meta Ads e Google Ads com cards de spend, clicks e CPM (em progresso).",
+            "Integração de dados de Meta Ads e Google Ads com cards de spend, clicks e CPM.",
             "Cálculo automático de CPL baseado no investimento total e leads gerados.",
             "Cards de taxas de conversão (CVR) entre cada etapa do funil.",
             "Comparação com período anterior e metas planejadas.",

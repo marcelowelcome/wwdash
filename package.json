@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.98.0",
+    "@tailwindcss/oxide-linux-x64-gnu": "^4.2.1",
     "clsx": "^2.1.1",
     "dotenv": "^17.3.1",
     "lucide-react": "^0.575.0",

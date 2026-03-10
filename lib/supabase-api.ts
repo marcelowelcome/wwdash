@@ -251,6 +251,24 @@ export async function fetchMonthlyTarget(
 }
 
 /**
+ * Upserts a monthly target for a specific month and pipeline type.
+ * Creates a new record if it doesn't exist, or updates if it does.
+ */
+export async function upsertMonthlyTarget(
+    target: MonthlyTarget
+): Promise<boolean> {
+    const { error } = await supabase
+        .from("monthly_targets")
+        .upsert(target, { onConflict: "month,pipeline_type" });
+
+    if (error) {
+        console.error("[upsertMonthlyTarget] Error:", error);
+        return false;
+    }
+    return true;
+}
+
+/**
  * Fetches all deals for a specific month (by created_at).
  */
 export async function fetchDealsForMonth(
