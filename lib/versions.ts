@@ -7,6 +7,30 @@ export interface VersionEntry {
 
 export const VERSION_HISTORY: VersionEntry[] = [
     {
+        version: "2.1.0",
+        date: "12/03/2026",
+        description: "Chat IA, correção de webhook e auditoria de dados.",
+        changes: [
+            "Nova aba 'Chat IA' com assistente inteligente (GPT-4o) para perguntas em linguagem natural.",
+            "Chat popup flutuante em todas as abas com contexto automático da tela atual.",
+            "Histórico de chat persistido em localStorage.",
+            "Correção crítica no webhook: mapeamento de campos por nome (key) em vez de ID numérico.",
+            "Auditoria e correção de todos os 23.578 deals no banco — ~185 campos corrigidos.",
+            "Correção do getCloserStatus: deals com data_fechamento agora são sempre classificados como Won.",
+        ],
+    },
+    {
+        version: "2.0.0",
+        date: "09/03/2026",
+        description: "Motor de Lead Scoring, abas Perfil & Score e Contratos.",
+        changes: [
+            "Novo motor de lead scoring simplificado baseado em destino, convidados e orçamento.",
+            "Aba 'Perfil & Score' com Score Board, Potencial por Mês e Qualidade do Funil.",
+            "Aba 'Contratos' com tabela detalhada de deals fechados e tooltip interativo.",
+            "Configuração de bandas A/B/C persistida em localStorage.",
+        ],
+    },
+    {
         version: "1.6.0",
         date: "06/03/2026",
         description: "Funil de Metas com separação Wedding/Elopement e integração Ads.",

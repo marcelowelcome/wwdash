@@ -178,13 +178,12 @@ export function computeMetrics(
 
 
     // ── CLOSER HELPER: Deal Resolution ──────────────────────────────────────────
-    // A deal is only officially Won if it has data_fechamento.
-    // If it is marked as Won (0) but has no data_fechamento, we treat it as Open (1).
+    // "Ganho" = data_fechamento preenchido, independente do status no CRM.
+    // Deals com data_fechamento são Won ("0"), sem data_fechamento nunca são Won.
     const getCloserStatus = (d: Deal) => {
-        if (d.status === "0" && !d.data_fechamento) {
-            return "1"; // Treat as Open
-        }
-        return d.status;
+        if (d.data_fechamento) return "0"; // Won
+        if (d.status === "2") return "2";  // Lost
+        return "1";                         // Open
     };
 
     // ── CLOSER 4-WEEK ROLLING CONVERSION ───────────────────────────────────────
@@ -414,6 +413,8 @@ export function computeMetrics(
     }
 
     // ── WEDDINGS IN PLANNING ────────────────────────────────────────────────────
+    // wonDeals all have data_fechamento, so they're all "won".
+    // Use getCloserStatus for consistency: cancelled = Lost status without data_fechamento.
     const planActiveCount = wonDeals.filter(d => d.status !== "2").length;
     const planCancelledCount = wonDeals.filter(d => d.status === "2").length;
 

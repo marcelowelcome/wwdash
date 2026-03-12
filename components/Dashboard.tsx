@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { fetchAllDealsFromDb, fetchFieldMetaFromDb, fetchStagesFromDb, fetchWonDealsFromDb, CLOSER_GROUP_ID } from "@/lib/supabase-api";
 import { computeMetrics, type Metrics } from "@/lib/metrics";
 import { T, statusColor } from "./dashboard/theme";
@@ -12,9 +12,13 @@ import { DictionaryTab } from "./dashboard/DictionaryTab";
 import { ContratosTab } from "./dashboard/ContratosTab";
 import { PerfilScoreTab } from "./dashboard/PerfilScoreTab";
 import { FunnelMetaTab } from "./dashboard/FunnelMetaTab";
+import { ChatTab } from "./dashboard/ChatTab";
+import { ChatPopup } from "./dashboard/ChatPopup";
 import { ChangelogModal } from "./dashboard/ChangelogModal";
 import { CURRENT_VERSION } from "@/lib/versions";
 import { type WonDeal } from "@/lib/schemas";
+import { useChat } from "@/lib/use-chat";
+import { buildTabContext } from "@/lib/chat-context";
 
 // Deduplicate deals by ID
 function deduplicateDeals(deals: WonDeal[]): WonDeal[] {
@@ -26,7 +30,7 @@ function deduplicateDeals(deals: WonDeal[]): WonDeal[] {
     });
 }
 
-type TabId = "overview" | "funnel" | "sdr" | "closer" | "pipeline" | "contratos" | "perfil-score" | "dictionary" | "funnel-metas";
+type TabId = "overview" | "funnel" | "sdr" | "closer" | "pipeline" | "contratos" | "perfil-score" | "dictionary" | "funnel-metas" | "chat";
 
 const TABS: { id: TabId; label: string }[] = [
     { id: "overview", label: "Visão Geral" },
@@ -37,6 +41,7 @@ const TABS: { id: TabId; label: string }[] = [
     { id: "contratos", label: "Contratos" },
     { id: "perfil-score", label: "Perfil & Score" },
     { id: "dictionary", label: "Dicionário" },
+    { id: "chat", label: "Chat IA" },
 ];
 
 // ─── HEADER ───────────────────────────────────────────────────────────────────
@@ -130,6 +135,7 @@ export default function Dashboard() {
     const [acStageMap, setAcStageMap] = useState<Record<string, string>>({});
     const [lastUpdate, setLastUpdate] = useState<string | null>(null);
     const [isChangelogOpen, setIsChangelogOpen] = useState(false);
+    const chat = useChat();
 
     const loadData = useCallback(async () => {
         setLoading(true);
@@ -226,6 +232,15 @@ export default function Dashboard() {
 
     if (!metrics) return null;
 
+    const chatContext = buildTabContext(tab, {
+        metrics,
+        sdrDeals,
+        closerDeals,
+        wonDeals,
+        fieldMap: acFieldMap,
+        stageMap: acStageMap,
+    });
+
     return (
         <div style={{ background: T.bg, minHeight: "100vh", color: T.white, fontFamily: "'Trebuchet MS', 'Lucida Grande', sans-serif" }}>
             <Header {...headerProps} />
@@ -239,7 +254,29 @@ export default function Dashboard() {
                 {tab === "perfil-score" && <PerfilScoreTab wonDeals={wonDeals} closerDeals={closerDeals} sdrDeals={sdrDeals} fieldMap={acFieldMap} />}
                 {tab === "dictionary" && <DictionaryTab />}
                 {tab === "funnel-metas" && <FunnelMetaTab allDeals={deduplicateDeals([...sdrDeals, ...closerDeals, ...wonDeals])} />}
+                {tab === "chat" && (
+                    <ChatTab
+                        messages={chat.messages}
+                        sendMessage={chat.sendMessage}
+                        isStreaming={chat.isStreaming}
+                        clearHistory={chat.clearHistory}
+                        stopStreaming={chat.stopStreaming}
+                        context={chatContext}
+                    />
+                )}
             </div>
+            {tab !== "chat" && (
+                <ChatPopup
+                    messages={chat.messages}
+                    sendMessage={chat.sendMessage}
+                    isStreaming={chat.isStreaming}
+                    clearHistory={chat.clearHistory}
+                    stopStreaming={chat.stopStreaming}
+                    context={chatContext}
+                    currentTab={tab}
+                    onOpenFullChat={() => setTab("chat")}
+                />
+            )}
             <ChangelogModal
                 isOpen={isChangelogOpen}
                 onClose={() => setIsChangelogOpen(false)}
