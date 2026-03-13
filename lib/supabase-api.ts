@@ -250,6 +250,42 @@ export async function fetchMonthlyTarget(
     return data as MonthlyTarget | null;
 }
 
+export async function upsertMonthlyTarget(
+    year: number,
+    month: number,
+    pipelineType: "wedding" | "elopement" | "trips",
+    values: Partial<Omit<MonthlyTarget, "month" | "pipeline_type">>
+): Promise<MonthlyTarget | null> {
+    const monthStr = `${year}-${String(month).padStart(2, "0")}-01`;
+
+    // Check if record exists
+    const { data: existing } = await supabase
+        .from("monthly_targets")
+        .select("id")
+        .eq("month", monthStr)
+        .eq("pipeline_type", pipelineType)
+        .maybeSingle();
+
+    if (existing) {
+        const { data, error } = await supabase
+            .from("monthly_targets")
+            .update({ ...values, updated_at: new Date().toISOString() })
+            .eq("id", existing.id)
+            .select("*")
+            .single();
+        if (error) { console.error("[upsertMonthlyTarget] Update error:", error); return null; }
+        return data as MonthlyTarget;
+    } else {
+        const { data, error } = await supabase
+            .from("monthly_targets")
+            .insert({ month: monthStr, pipeline_type: pipelineType, ...values })
+            .select("*")
+            .single();
+        if (error) { console.error("[upsertMonthlyTarget] Insert error:", error); return null; }
+        return data as MonthlyTarget;
+    }
+}
+
 /**
  * Fetches all deals for a specific month (by created_at).
  */

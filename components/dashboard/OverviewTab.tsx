@@ -9,9 +9,10 @@ import {
 import { KpiCard } from "./KpiCard";
 import { SectionTitle } from "./SectionTitle";
 import { CustomTooltip } from "./CustomTooltip";
+import { OverviewFunnelTable } from "./OverviewFunnelTable";
 import { T, statusColor } from "./theme";
 import { computeOverviewMetrics } from "@/lib/metrics-overview";
-import { type Deal } from "@/lib/schemas";
+import { type Deal, type WonDeal } from "@/lib/schemas";
 
 interface OverviewTabProps {
     sdrDeals: Deal[];
@@ -19,6 +20,7 @@ interface OverviewTabProps {
     wonDeals: Deal[];
     fieldMap: Record<string, string>;
     stageMap: Record<string, string>;
+    allDeals: WonDeal[];
 }
 
 function getWeekStart(): string {
@@ -52,7 +54,7 @@ function detectShortcut(startStr: string, endStr: string): Shortcut {
     return null;
 }
 
-export function OverviewTab({ sdrDeals, closerDeals, wonDeals, fieldMap, stageMap }: OverviewTabProps) {
+export function OverviewTab({ sdrDeals, closerDeals, wonDeals, fieldMap, stageMap, allDeals }: OverviewTabProps) {
     const [startStr, setStartStr] = useState(getWeekStart);
     const [endStr, setEndStr] = useState(todayStr);
 
@@ -271,6 +273,9 @@ export function OverviewTab({ sdrDeals, closerDeals, wonDeals, fieldMap, stageMa
                     )}
                 </div>
             </div>
+
+            {/* Funnel Table */}
+            <OverviewFunnelTable allDeals={allDeals} />
         </div>
     );
 }
