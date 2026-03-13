@@ -9,11 +9,12 @@ export const VERSION_HISTORY: VersionEntry[] = [
     {
         version: "2.2.0",
         date: "13/03/2026",
-        description: "Sync automático AC → Supabase e botão de sincronização manual.",
+        description: "Sync automático AC → Supabase via Edge Function e botão de sincronização manual.",
         changes: [
-            "Novo cron de sync incremental (a cada 2h) que reconcilia deals do ActiveCampaign com o Supabase.",
+            "Supabase Edge Function 'sync-deals' para sync incremental AC → Supabase (janela de 3h).",
+            "pg_cron agendado a cada 2h para disparar a Edge Function automaticamente.",
             "Botão 'Sync AC' no header do dashboard para sincronização manual sob demanda.",
-            "Módulo compartilhado de mapeamento de campos AC (ac-field-map.ts) para consistência entre sync e backfill.",
+            "Sync route simplificada: chama Edge Function via Supabase (zero env vars extras no Vercel).",
             "Auto-refresh do dashboard após sync bem-sucedido.",
         ],
     },
