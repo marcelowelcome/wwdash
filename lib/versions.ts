@@ -7,6 +7,17 @@ export interface VersionEntry {
 
 export const VERSION_HISTORY: VersionEntry[] = [
     {
+        version: "2.2.0",
+        date: "13/03/2026",
+        description: "Sync automático AC → Supabase e botão de sincronização manual.",
+        changes: [
+            "Novo cron de sync incremental (a cada 2h) que reconcilia deals do ActiveCampaign com o Supabase.",
+            "Botão 'Sync AC' no header do dashboard para sincronização manual sob demanda.",
+            "Módulo compartilhado de mapeamento de campos AC (ac-field-map.ts) para consistência entre sync e backfill.",
+            "Auto-refresh do dashboard após sync bem-sucedido.",
+        ],
+    },
+    {
         version: "2.1.0",
         date: "12/03/2026",
         description: "Chat IA, correção de webhook e auditoria de dados.",

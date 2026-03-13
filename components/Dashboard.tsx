@@ -53,9 +53,12 @@ interface HeaderProps {
     lastUpdate: string | null;
     onRefresh: () => void;
     onVersionClick: () => void;
+    onSync: () => void;
+    syncing: boolean;
+    syncResult: { synced?: number; error?: string } | null;
 }
 
-function Header({ tab, setTab, metrics, loading, lastUpdate, onRefresh, onVersionClick }: HeaderProps) {
+function Header({ tab, setTab, metrics, loading, lastUpdate, onRefresh, onVersionClick, onSync, syncing, syncResult }: HeaderProps) {
     return (
         <div style={{ background: T.surface, borderBottom: `1px solid ${T.border}`, padding: "0 28px" }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", maxWidth: 1200, margin: "0 auto", padding: "16px 0" }}>
@@ -93,6 +96,20 @@ function Header({ tab, setTab, metrics, loading, lastUpdate, onRefresh, onVersio
                                 🟢 SDR {metrics.sdrThisWeek} leads
                             </span>
                         </>
+                    )}
+                    <button
+                        id="btn-sync"
+                        onClick={onSync}
+                        disabled={syncing}
+                        title="Sincronizar deals do ActiveCampaign"
+                        style={{ background: syncing ? T.card : "#1a2636", border: `1px solid ${syncing ? T.border : "#2a6"}`, borderRadius: 8, padding: "6px 12px", color: syncing ? T.muted : "#4aea8b", fontSize: 11, cursor: syncing ? "wait" : "pointer", fontFamily: "inherit", fontWeight: 600 }}
+                    >
+                        {syncing ? "⟳ Sincronizando…" : "⇅ Sync AC"}
+                    </button>
+                    {syncResult && (
+                        <span style={{ fontSize: 10, color: syncResult.error ? "#f66" : "#4aea8b" }}>
+                            {syncResult.error ? `Erro: ${syncResult.error}` : `${syncResult.synced} deals sincronizados`}
+                        </span>
                     )}
                     <button
                         id="btn-refresh"
@@ -135,6 +152,8 @@ export default function Dashboard() {
     const [acStageMap, setAcStageMap] = useState<Record<string, string>>({});
     const [lastUpdate, setLastUpdate] = useState<string | null>(null);
     const [isChangelogOpen, setIsChangelogOpen] = useState(false);
+    const [syncing, setSyncing] = useState(false);
+    const [syncResult, setSyncResult] = useState<{ synced?: number; error?: string } | null>(null);
     const chat = useChat();
 
     const loadData = useCallback(async () => {
@@ -178,6 +197,28 @@ export default function Dashboard() {
         }
     }, []);
 
+    const handleSync = useCallback(async () => {
+        setSyncing(true);
+        setSyncResult(null);
+        try {
+            const resp = await fetch("/api/sync", { method: "POST" });
+            const data = await resp.json();
+            if (!resp.ok) {
+                setSyncResult({ error: data.error || `HTTP ${resp.status}` });
+            } else {
+                setSyncResult({ synced: data.synced ?? 0 });
+                // Auto-refresh dashboard data after sync
+                loadData();
+            }
+        } catch (e) {
+            setSyncResult({ error: e instanceof Error ? e.message : "Falha na conexão" });
+        } finally {
+            setSyncing(false);
+            // Clear result after 8 seconds
+            setTimeout(() => setSyncResult(null), 8000);
+        }
+    }, [loadData]);
+
     useEffect(() => {
         loadData();
         const timer = setInterval(loadData, 60 * 60 * 1000); // auto-refresh every 60 min
@@ -192,6 +233,9 @@ export default function Dashboard() {
         lastUpdate,
         onRefresh: loadData,
         onVersionClick: () => setIsChangelogOpen(true),
+        onSync: handleSync,
+        syncing,
+        syncResult,
     };
 
     if (loading) {
@@ -245,7 +289,7 @@ export default function Dashboard() {
         <div style={{ background: T.bg, minHeight: "100vh", color: T.white, fontFamily: "'Trebuchet MS', 'Lucida Grande', sans-serif" }}>
             <Header {...headerProps} />
             <div style={{ maxWidth: 1200, margin: "0 auto", padding: "24px 28px 48px" }}>
-                {tab === "overview" && <OverviewTab sdrDeals={sdrDeals} closerDeals={closerDeals} wonDeals={wonDeals} fieldMap={acFieldMap} stageMap={acStageMap} />}
+                {tab === "overview" && <OverviewTab sdrDeals={sdrDeals} closerDeals={closerDeals} wonDeals={wonDeals} fieldMap={acFieldMap} stageMap={acStageMap} allDeals={deduplicateDeals([...sdrDeals, ...closerDeals, ...wonDeals])} />}
                 {tab === "sdr" && <SDRTab deals={sdrDeals} fieldMap={acFieldMap} />}
                 {tab === "funnel" && <FunnelTab m={metrics} />}
                 {tab === "closer" && <CloserTab m={metrics} />}
