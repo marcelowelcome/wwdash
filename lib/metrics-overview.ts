@@ -37,8 +37,9 @@ export function computeOverviewMetrics(
 
     // ── CLOSER HELPER ─────────────────────────────────────────────────────────
     const getCloserStatus = (d: Deal) => {
-        if (d.status === "0" && !d.data_fechamento) return "1";
-        return d.status;
+        if (d.data_fechamento) return "0"; // Won — data_fechamento is source of truth
+        if (d.status === "2") return "2";  // Lost
+        return "1";                         // Open
     };
 
     const getPerformanceDate = (d: Deal) => {
