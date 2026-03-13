@@ -20,6 +20,7 @@ export async function POST() {
           'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
           'Content-Type': 'application/json',
         },
+        body: JSON.stringify({ source: 'manual' }),
       },
     )
 

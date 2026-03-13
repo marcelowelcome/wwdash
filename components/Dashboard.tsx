@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { fetchAllDealsFromDb, fetchFieldMetaFromDb, fetchStagesFromDb, fetchWonDealsFromDb, CLOSER_GROUP_ID } from "@/lib/supabase-api";
+import { supabase } from "@/lib/supabase";
 import { computeMetrics, type Metrics } from "@/lib/metrics";
 import { T, statusColor } from "./dashboard/theme";
 import { OverviewTab } from "./dashboard/OverviewTab";
@@ -45,6 +46,17 @@ const TABS: { id: TabId; label: string }[] = [
 ];
 
 // ─── HEADER ───────────────────────────────────────────────────────────────────
+interface SyncLog {
+    id: number;
+    started_at: string;
+    finished_at: string;
+    hours_back: number;
+    synced: number;
+    pages: number;
+    errors: string[] | null;
+    trigger_source: string;
+}
+
 interface HeaderProps {
     tab: TabId;
     setTab: (t: TabId) => void;
@@ -56,9 +68,20 @@ interface HeaderProps {
     onSync: () => void;
     syncing: boolean;
     syncResult: { synced?: number; error?: string } | null;
+    lastSyncLog: SyncLog | null;
 }
 
-function Header({ tab, setTab, metrics, loading, lastUpdate, onRefresh, onVersionClick, onSync, syncing, syncResult }: HeaderProps) {
+function formatSyncAge(iso: string): string {
+    const ms = Date.now() - new Date(iso).getTime();
+    const min = Math.floor(ms / 60000);
+    if (min < 1) return "agora";
+    if (min < 60) return `${min}min atrás`;
+    const h = Math.floor(min / 60);
+    if (h < 24) return `${h}h atrás`;
+    return `${Math.floor(h / 24)}d atrás`;
+}
+
+function Header({ tab, setTab, metrics, loading, lastUpdate, onRefresh, onVersionClick, onSync, syncing, syncResult, lastSyncLog }: HeaderProps) {
     return (
         <div style={{ background: T.surface, borderBottom: `1px solid ${T.border}`, padding: "0 28px" }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", maxWidth: 1200, margin: "0 auto", padding: "16px 0" }}>
@@ -111,6 +134,11 @@ function Header({ tab, setTab, metrics, loading, lastUpdate, onRefresh, onVersio
                             {syncResult.error ? `Erro: ${syncResult.error}` : `${syncResult.synced} deals sincronizados`}
                         </span>
                     )}
+                    {!syncResult && lastSyncLog && (
+                        <span style={{ fontSize: 10, color: T.muted }} title={`Último sync: ${new Date(lastSyncLog.finished_at).toLocaleString("pt-BR")} · ${lastSyncLog.synced} deals · ${lastSyncLog.trigger_source}${lastSyncLog.errors ? ` · ${lastSyncLog.errors.length} erros` : ""}`}>
+                            Sync: {formatSyncAge(lastSyncLog.finished_at)} · {lastSyncLog.synced} deals ({lastSyncLog.trigger_source})
+                        </span>
+                    )}
                     <button
                         id="btn-refresh"
                         onClick={onRefresh}
@@ -154,6 +182,7 @@ export default function Dashboard() {
     const [isChangelogOpen, setIsChangelogOpen] = useState(false);
     const [syncing, setSyncing] = useState(false);
     const [syncResult, setSyncResult] = useState<{ synced?: number; error?: string } | null>(null);
+    const [lastSyncLog, setLastSyncLog] = useState<SyncLog | null>(null);
     const chat = useChat();
 
     const loadData = useCallback(async () => {
@@ -183,6 +212,14 @@ export default function Dashboard() {
 
             setLoadStep("Calculando métricas…");
             setMetrics(computeMetrics(sdrP1, closerDeals, wonDealsData, fieldMap, stageMap));
+
+            // Fetch last sync log
+            const { data: logs } = await supabase
+                .from("sync_logs")
+                .select("*")
+                .order("id", { ascending: false })
+                .limit(1);
+            if (logs && logs.length > 0) setLastSyncLog(logs[0] as SyncLog);
 
             setLastUpdate(new Date().toLocaleTimeString("pt-BR"));
         } catch (e) {
@@ -236,6 +273,7 @@ export default function Dashboard() {
         onSync: handleSync,
         syncing,
         syncResult,
+        lastSyncLog,
     };
 
     if (loading) {
