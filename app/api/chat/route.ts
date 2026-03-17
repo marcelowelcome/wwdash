@@ -1,4 +1,13 @@
 import OpenAI from "openai";
+import { z } from "zod";
+
+const ChatRequestSchema = z.object({
+    messages: z.array(z.object({
+        role: z.enum(["user", "assistant"]),
+        content: z.string().max(10000),
+    })).min(1).max(20),
+    context: z.string().max(50000).optional().default(""),
+});
 
 const SYSTEM_PROMPT = `Você é um analista de dados especializado no funil de vendas da Welcome Weddings, uma assessoria de destination weddings.
 
@@ -19,7 +28,7 @@ const SYSTEM_PROMPT = `Você é um analista de dados especializado no funil de v
 - Tiers: A (melhor), B, C
 
 ## Sobre o dashboard
-O usuário está visualizando um dashboard de KPIs de vendas com abas: Visão Geral, Funil, SDR, Closer, Pipeline, Contratos, Perfil & Score e Dicionário.`;
+O usuário está visualizando um dashboard de KPIs de vendas com abas: Visão Geral, Funil, SDR, Closer, Pipeline, Contratos, Perfil & Score, Dicionário e Chat IA.`;
 
 export async function POST(req: Request) {
     const apiKey = process.env.OPENAI_API_KEY;
@@ -30,23 +39,19 @@ export async function POST(req: Request) {
         });
     }
 
-    let body: { messages: { role: string; content: string }[]; context: string };
+    let parsed: z.infer<typeof ChatRequestSchema>;
     try {
-        body = await req.json();
-    } catch {
-        return new Response(JSON.stringify({ error: "Body inválido" }), {
+        const raw = await req.json();
+        parsed = ChatRequestSchema.parse(raw);
+    } catch (e) {
+        const msg = e instanceof z.ZodError ? e.issues.map((i: z.ZodIssue) => i.message).join(", ") : "Body inválido";
+        return new Response(JSON.stringify({ error: msg }), {
             status: 400,
             headers: { "Content-Type": "application/json" },
         });
     }
 
-    const { messages, context } = body;
-    if (!messages || !Array.isArray(messages)) {
-        return new Response(JSON.stringify({ error: "messages é obrigatório" }), {
-            status: 400,
-            headers: { "Content-Type": "application/json" },
-        });
-    }
+    const { messages, context } = parsed;
 
     const systemPrompt = `${SYSTEM_PROMPT}\n\n## CONTEXTO (dados reais do dashboard)\n${context || "Nenhum contexto disponível."}`;
 

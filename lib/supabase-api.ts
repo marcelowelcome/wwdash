@@ -21,6 +21,34 @@ const F_SQL_ID = "custom_field_sql";
 const F_TAX_SENT_ID = "custom_field_tax_sent";
 const F_TAX_PAID_ID = "custom_field_tax_paid";
 
+// Status mapping: CRM text → internal code (module-level, not recreated per row)
+const STATUS_MAP: Record<string, string> = {
+    "Won": "0",
+    "Open": "1",
+    "Lost": "2",
+};
+
+// Columns used by the row→WonDeal mapping (avoids SELECT *)
+const DEAL_COLUMNS = [
+    "id", "created_at", "updated_at", "status", "stage", "group_id", "stage_id", "owner_id",
+    "ww_closer_data_hora_ganho", "data_fechamento", "destino", "data_reuniao_1", "como_reuniao_1",
+    "data_closer", "valor_fechado_em_contrato", "orcamento", "num_convidados", "cidade", "pipeline",
+    "is_elopement", "ww_fonte_do_lead", "status_do_relacionamento", "costumam_viajar",
+    "motivo_da_escolha_de_um_destination_wedding", "j_foi_em_algum_destination_wedding",
+    "j_tem_destino_definido", "previs_o_data_de_casamento", "previs_o_contratar_assessoria",
+    "ww_como_foi_feita_reuni_o_closer", "tipo_da_reuni_o_com_a_closer", "ww_fez_segunda_reuni_o",
+    "ww_foi_apresentado_detalhamento_de_or_amento", "data_qualificado", "reuniao_closer",
+    "pipeline_id", "title", "motivos_qualificacao_sdr", "ww_closer_motivo_de_perda", "motivo_de_perda",
+    "motivo_desqualifica_o_sdr", "qualificado_sql", "wt_enviado_pagamento_de_taxa",
+    "pagamento_de_taxa", "pagou_a_taxa",
+].join(",");
+
+// Wedding Pipeline IDs
+const WW_PIPELINE_IDS = [1, 3, 4, 17, 31];
+const ELOPEMENT_PIPELINE_ID = 12;
+
+// ─── HELPERS ───────────────────────────────────────────────────────────────────
+
 function mapMeetingType(val: any): string | null {
     if (!val) return null;
     if (Array.isArray(val)) return val[0] || null;
@@ -34,8 +62,64 @@ function mapSql(val: any): string {
 }
 
 /**
+ * Single source of truth: maps a Supabase row to a WonDeal object.
+ * @param row Raw row from Supabase
+ * @param groupIdFallback Fallback group_id when row.group_id is missing
+ * @param includeCf Whether to populate _cf with custom fields (false for funnel-only queries)
+ */
+function mapRowToWonDeal(row: any, groupIdFallback?: string, includeCf = false): WonDeal {
+    return {
+        id: String(row.id),
+        cdate: row.created_at,
+        mdate: row.updated_at || undefined,
+        status: STATUS_MAP[row.status] || "1",
+        stage: row.stage || "Padrão",
+        group_id: row.group_id || groupIdFallback,
+        stage_id: row.stage_id,
+        owner_id: row.owner_id,
+        data_fechamento: row.ww_closer_data_hora_ganho || row.data_fechamento,
+        destino: row.destino || null,
+        data_reuniao_1: row.data_reuniao_1 || null,
+        como_foi_feita_a_1a_reuniao: mapMeetingType(row.como_reuniao_1),
+        data_horario_agendamento_closer: row.data_closer || null,
+        valor_fechado_em_contrato: row.valor_fechado_em_contrato ? parseFloat(row.valor_fechado_em_contrato) : null,
+        orcamento: row.orcamento ? parseFloat(row.orcamento) : null,
+        num_convidados: row.num_convidados ? parseInt(row.num_convidados, 10) : null,
+        cidade: row.cidade || null,
+        pipeline: row.pipeline || null,
+        is_elopement: row.is_elopement ?? null,
+        ww_fonte_do_lead: row.ww_fonte_do_lead || null,
+        status_do_relacionamento: row.status_do_relacionamento || null,
+        costumam_viajar: row.costumam_viajar ?? null,
+        motivo_destination_wedding: row.motivo_da_escolha_de_um_destination_wedding ?? null,
+        ja_foi_destination_wedding: row.j_foi_em_algum_destination_wedding ?? null,
+        ja_tem_destino_definido: row.j_tem_destino_definido ?? null,
+        previsao_data_casamento: row.previs_o_data_de_casamento ? String(row.previs_o_data_de_casamento) : null,
+        previsao_contratar_assessoria: row.previs_o_contratar_assessoria || null,
+        tipo_reuniao_closer: row.ww_como_foi_feita_reuni_o_closer || row.tipo_da_reuni_o_com_a_closer || null,
+        fez_segunda_reuniao: row.ww_fez_segunda_reuni_o ?? null,
+        apresentado_orcamento: row.ww_foi_apresentado_detalhamento_de_or_amento ?? null,
+        data_qualificado: row.data_qualificado || null,
+        reuniao_closer: row.reuniao_closer || null,
+        pipeline_id: row.pipeline_id != null ? Number(row.pipeline_id) : null,
+        title: row.title || null,
+        _cf: includeCf ? {
+            [FQ_ID]: row.motivos_qualificacao_sdr || "",
+            [FL_ID]: row.ww_closer_motivo_de_perda || row.motivo_de_perda || "",
+            [FD_ID]: row.motivo_desqualifica_o_sdr || "",
+            [F_SOURCE_ID]: row.ww_fonte_do_lead || "",
+            [F_SQL_ID]: mapSql(row.qualificado_sql),
+            [F_TAX_SENT_ID]: String(row.wt_enviado_pagamento_de_taxa || ""),
+            [F_TAX_PAID_ID]: String(row.pagamento_de_taxa || row.pagou_a_taxa || ""),
+        } : {},
+    };
+}
+
+// ─── DEAL FETCHERS ─────────────────────────────────────────────────────────────
+
+/**
  * Fetches deals from Supabase and transforms them into the Deal schema.
- * @param groupId The ID of the group (e.g., '1' for SDR Weddings, '8' for Closer Weddings)
+ * @param groupId The ID of the group (e.g., '1' for SDR Weddings, '3' for Closer Weddings)
  * @param daysBack How many days back to fetch data
  */
 export async function fetchAllDealsFromDb(
@@ -59,7 +143,7 @@ export async function fetchAllDealsFromDb(
     while (true) {
         const { data, error } = await supabase
             .from("deals")
-            .select("*")
+            .select(DEAL_COLUMNS)
             .or(groupFilter)
             .gte("created_at", afterStr)
             .order("created_at", { ascending: false })
@@ -76,70 +160,11 @@ export async function fetchAllDealsFromDb(
         from += limit;
     }
 
-    return allRows.map((row) => {
-        // Map status: Won -> "0", Open -> "1", Lost -> "2"
-        const statusMap: Record<string, string> = {
-            "Won": "0",
-            "Open": "1",
-            "Lost": "2"
-        };
-
-        const deal: WonDeal = {
-            id: String(row.id),
-            cdate: row.created_at,
-            mdate: row.updated_at || undefined,
-            status: statusMap[row.status] || "1",
-            stage: row.stage || "Padrão",
-            group_id: row.group_id || groupId,
-            stage_id: row.stage_id,
-            owner_id: row.owner_id,
-            data_fechamento: row.ww_closer_data_hora_ganho || row.data_fechamento,
-            destino: row.destino || null,
-            data_reuniao_1: row.data_reuniao_1 || null,
-            como_foi_feita_a_1a_reuniao: mapMeetingType(row.como_reuniao_1),
-            data_horario_agendamento_closer: row.data_closer || null,
-            // Contract-analysis fields
-            valor_fechado_em_contrato: row.valor_fechado_em_contrato ? parseFloat(row.valor_fechado_em_contrato) : null,
-            orcamento: row.orcamento ? parseFloat(row.orcamento) : null,
-            num_convidados: row.num_convidados ? parseInt(row.num_convidados, 10) : null,
-            cidade: row.cidade || null,
-            pipeline: row.pipeline || null,
-            is_elopement: row.is_elopement ?? null,
-            ww_fonte_do_lead: row.ww_fonte_do_lead || null,
-            // SDR-gathered scoring fields
-            status_do_relacionamento: row.status_do_relacionamento || null,
-            costumam_viajar: row.costumam_viajar ?? null,
-            motivo_destination_wedding: row.motivo_da_escolha_de_um_destination_wedding ?? null,
-            ja_foi_destination_wedding: row.j_foi_em_algum_destination_wedding ?? null,
-            ja_tem_destino_definido: row.j_tem_destino_definido ?? null,
-            previsao_data_casamento: row.previs_o_data_de_casamento ? String(row.previs_o_data_de_casamento) : null,
-            previsao_contratar_assessoria: row.previs_o_contratar_assessoria || null,
-            // Closer-gathered scoring fields
-            tipo_reuniao_closer: row.ww_como_foi_feita_reuni_o_closer || row.tipo_da_reuni_o_com_a_closer || null,
-            fez_segunda_reuniao: row.ww_fez_segunda_reuni_o ?? null,
-            apresentado_orcamento: row.ww_foi_apresentado_detalhamento_de_or_amento ?? null,
-            // Funnel Metas fields
-            data_qualificado: row.data_qualificado || null,
-            reuniao_closer: row.reuniao_closer || null,
-            pipeline_id: row.pipeline_id ?? null,
-            title: row.title || null,
-            _cf: {
-                [FQ_ID]: row.motivos_qualificacao_sdr || "",
-                [FL_ID]: row.ww_closer_motivo_de_perda || row.motivo_de_perda || "",
-                [FD_ID]: row.motivo_desqualifica_o_sdr || "",
-                [F_SOURCE_ID]: row.ww_fonte_do_lead || "",
-                [F_SQL_ID]: mapSql(row.qualificado_sql),
-                [F_TAX_SENT_ID]: String(row.wt_enviado_pagamento_de_taxa || ""),
-                [F_TAX_PAID_ID]: String(row.pagamento_de_taxa || row.pagou_a_taxa || ""),
-            }
-        };
-
-        return deal;
-    });
+    return allRows.map((row) => mapRowToWonDeal(row, groupId, true));
 }
 
 /**
- * Fetches all deals that have been won (data_fechamento is not null) for a specific group.
+ * Fetches all deals that have been won (data_fechamento is not null).
  * These represent the "Casamentos em planning" and past won deals.
  */
 export async function fetchWonDealsFromDb(_groupId: string): Promise<WonDeal[]> {
@@ -150,7 +175,7 @@ export async function fetchWonDealsFromDb(_groupId: string): Promise<WonDeal[]> 
     while (true) {
         const { data, error } = await supabase
             .from("deals")
-            .select("*")
+            .select(DEAL_COLUMNS)
             .or("data_fechamento.not.is.null,ww_closer_data_hora_ganho.not.is.null")
             .order("created_at", { ascending: false })
             .range(from, from + limit - 1);
@@ -166,63 +191,7 @@ export async function fetchWonDealsFromDb(_groupId: string): Promise<WonDeal[]> 
         from += limit;
     }
 
-    return allRows.map((row) => {
-        const statusMap: Record<string, string> = {
-            "Won": "0",
-            "Open": "1",
-            "Lost": "2"
-        };
-
-        return {
-            id: String(row.id),
-            cdate: row.created_at,
-            mdate: row.updated_at || undefined,
-            status: statusMap[row.status] || "1",
-            stage: row.stage || "Padrão",
-            group_id: row.group_id,
-            stage_id: row.stage_id,
-            owner_id: row.owner_id,
-            data_fechamento: row.ww_closer_data_hora_ganho || row.data_fechamento,
-            destino: row.destino || null,
-            data_reuniao_1: row.data_reuniao_1 || null,
-            como_foi_feita_a_1a_reuniao: mapMeetingType(row.como_reuniao_1),
-            data_horario_agendamento_closer: row.data_closer || null,
-            // Contract-analysis fields
-            valor_fechado_em_contrato: row.valor_fechado_em_contrato ? parseFloat(row.valor_fechado_em_contrato) : null,
-            orcamento: row.orcamento ? parseFloat(row.orcamento) : null,
-            num_convidados: row.num_convidados ? parseInt(row.num_convidados, 10) : null,
-            cidade: row.cidade || null,
-            pipeline: row.pipeline || null,
-            is_elopement: row.is_elopement ?? null,
-            ww_fonte_do_lead: row.ww_fonte_do_lead || null,
-            // SDR-gathered scoring fields
-            status_do_relacionamento: row.status_do_relacionamento || null,
-            costumam_viajar: row.costumam_viajar ?? null,
-            motivo_destination_wedding: row.motivo_da_escolha_de_um_destination_wedding ?? null,
-            ja_foi_destination_wedding: row.j_foi_em_algum_destination_wedding ?? null,
-            ja_tem_destino_definido: row.j_tem_destino_definido ?? null,
-            previsao_data_casamento: row.previs_o_data_de_casamento ? String(row.previs_o_data_de_casamento) : null,
-            previsao_contratar_assessoria: row.previs_o_contratar_assessoria || null,
-            // Closer-gathered scoring fields
-            tipo_reuniao_closer: row.ww_como_foi_feita_reuni_o_closer || row.tipo_da_reuni_o_com_a_closer || null,
-            fez_segunda_reuniao: row.ww_fez_segunda_reuni_o ?? null,
-            apresentado_orcamento: row.ww_foi_apresentado_detalhamento_de_or_amento ?? null,
-            // Funnel Metas fields
-            data_qualificado: row.data_qualificado || null,
-            reuniao_closer: row.reuniao_closer || null,
-            pipeline_id: row.pipeline_id ?? null,
-            title: row.title || null,
-            _cf: {
-                [FQ_ID]: row.motivos_qualificacao_sdr || "",
-                [FL_ID]: row.ww_closer_motivo_de_perda || row.motivo_de_perda || "",
-                [FD_ID]: row.motivo_desqualifica_o_sdr || "",
-                [F_SOURCE_ID]: row.ww_fonte_do_lead || "",
-                [F_SQL_ID]: mapSql(row.qualificado_sql),
-                [F_TAX_SENT_ID]: String(row.wt_enviado_pagamento_de_taxa || ""),
-                [F_TAX_PAID_ID]: String(row.pagamento_de_taxa || row.pagou_a_taxa || ""),
-            }
-        };
-    });
+    return allRows.map((row) => mapRowToWonDeal(row, undefined, true));
 }
 
 /**
@@ -258,32 +227,20 @@ export async function upsertMonthlyTarget(
 ): Promise<MonthlyTarget | null> {
     const monthStr = `${year}-${String(month).padStart(2, "0")}-01`;
 
-    // Check if record exists
-    const { data: existing } = await supabase
+    const { data, error } = await supabase
         .from("monthly_targets")
-        .select("id")
-        .eq("month", monthStr)
-        .eq("pipeline_type", pipelineType)
-        .maybeSingle();
+        .upsert(
+            { month: monthStr, pipeline_type: pipelineType, ...values, updated_at: new Date().toISOString() },
+            { onConflict: "month,pipeline_type" }
+        )
+        .select("*")
+        .single();
 
-    if (existing) {
-        const { data, error } = await supabase
-            .from("monthly_targets")
-            .update({ ...values, updated_at: new Date().toISOString() })
-            .eq("id", existing.id)
-            .select("*")
-            .single();
-        if (error) { console.error("[upsertMonthlyTarget] Update error:", error); return null; }
-        return data as MonthlyTarget;
-    } else {
-        const { data, error } = await supabase
-            .from("monthly_targets")
-            .insert({ month: monthStr, pipeline_type: pipelineType, ...values })
-            .select("*")
-            .single();
-        if (error) { console.error("[upsertMonthlyTarget] Insert error:", error); return null; }
-        return data as MonthlyTarget;
+    if (error) {
+        console.error("[upsertMonthlyTarget] Error:", error);
+        return null;
     }
+    return data as MonthlyTarget;
 }
 
 /**
@@ -303,7 +260,7 @@ export async function fetchDealsForMonth(
     while (true) {
         const { data, error } = await supabase
             .from("deals")
-            .select("*")
+            .select(DEAL_COLUMNS)
             .gte("created_at", startDate.toISOString())
             .lte("created_at", endDate.toISOString())
             .order("created_at", { ascending: false })
@@ -320,39 +277,7 @@ export async function fetchDealsForMonth(
         from += limit;
     }
 
-    const statusMap: Record<string, string> = {
-        "Won": "0",
-        "Open": "1",
-        "Lost": "2"
-    };
-
-    return allRows.map((row) => ({
-        id: String(row.id),
-        cdate: row.created_at,
-        mdate: row.updated_at || undefined,
-        status: statusMap[row.status] || "1",
-        stage: row.stage || "Padrão",
-        group_id: row.group_id,
-        stage_id: row.stage_id,
-        owner_id: row.owner_id,
-        data_fechamento: row.ww_closer_data_hora_ganho || row.data_fechamento,
-        destino: row.destino || null,
-        data_reuniao_1: row.data_reuniao_1 || null,
-        como_foi_feita_a_1a_reuniao: row.como_reuniao_1 || null,
-        data_horario_agendamento_closer: row.data_closer || null,
-        valor_fechado_em_contrato: row.valor_fechado_em_contrato ? parseFloat(row.valor_fechado_em_contrato) : null,
-        orcamento: row.orcamento ? parseFloat(row.orcamento) : null,
-        num_convidados: row.num_convidados ? parseInt(row.num_convidados, 10) : null,
-        cidade: row.cidade || null,
-        pipeline: row.pipeline || null,
-        is_elopement: row.is_elopement ?? null,
-        ww_fonte_do_lead: row.ww_fonte_do_lead || null,
-        data_qualificado: row.data_qualificado || null,
-        reuniao_closer: row.reuniao_closer || null,
-        pipeline_id: row.pipeline_id != null ? Number(row.pipeline_id) : null,
-        title: row.title || null,
-        _cf: {}
-    }));
+    return allRows.map((row) => mapRowToWonDeal(row));
 }
 
 /**
@@ -381,7 +306,8 @@ export async function fetchStagesFromDb(): Promise<Record<string, string>> {
         .from("deals")
         .select("stage")
         .eq("status", "Open")
-        .not("stage", "is", null);
+        .not("stage", "is", null)
+        .limit(500);
 
     if (error) {
         console.error("[fetchStagesFromDb] Error:", error);
@@ -405,48 +331,7 @@ export function buildWeekLabel(key: string): string {
     return `${dt.getDate()}/${dt.getMonth() + 1}–${end.getDate()}/${end.getMonth() + 1}`;
 }
 
-// ============================================
-// FUNNEL METAS QUERIES (from dash-webhook)
-// ============================================
-
-// Wedding Pipeline IDs
-const WW_PIPELINE_IDS = [1, 3, 4, 17, 31];
-const ELOPEMENT_PIPELINE_ID = 12;
-
-function mapRowToWonDeal(row: any): WonDeal {
-    const statusMap: Record<string, string> = {
-        "Won": "0",
-        "Open": "1",
-        "Lost": "2"
-    };
-    return {
-        id: String(row.id),
-        cdate: row.created_at,
-        mdate: row.updated_at || undefined,
-        status: statusMap[row.status] || "1",
-        stage: row.stage || "Padrão",
-        group_id: row.group_id,
-        stage_id: row.stage_id,
-        owner_id: row.owner_id,
-        data_fechamento: row.ww_closer_data_hora_ganho || row.data_fechamento,
-        destino: row.destino || null,
-        data_reuniao_1: row.data_reuniao_1 || null,
-        como_foi_feita_a_1a_reuniao: row.como_reuniao_1 || null,
-        data_horario_agendamento_closer: row.data_closer || null,
-        valor_fechado_em_contrato: row.valor_fechado_em_contrato ? parseFloat(row.valor_fechado_em_contrato) : null,
-        orcamento: row.orcamento ? parseFloat(row.orcamento) : null,
-        num_convidados: row.num_convidados ? parseInt(row.num_convidados, 10) : null,
-        cidade: row.cidade || null,
-        pipeline: row.pipeline || null,
-        is_elopement: row.is_elopement ?? null,
-        ww_fonte_do_lead: row.ww_fonte_do_lead || null,
-        data_qualificado: row.data_qualificado || null,
-        reuniao_closer: row.reuniao_closer || null,
-        pipeline_id: row.pipeline_id != null ? Number(row.pipeline_id) : null,
-        title: row.title || null,
-        _cf: {}
-    };
-}
+// ─── FUNNEL METAS QUERIES ──────────────────────────────────────────────────────
 
 /**
  * Fetches Wedding deals for a specific month (by created_at).
@@ -466,7 +351,7 @@ export async function fetchWeddingDealsForMonth(
     while (true) {
         const { data, error } = await supabase
             .from("deals")
-            .select("*")
+            .select(DEAL_COLUMNS)
             .gte("created_at", startDate.toISOString())
             .lte("created_at", endDate.toISOString())
             .in("pipeline_id", WW_PIPELINE_IDS)
@@ -485,7 +370,7 @@ export async function fetchWeddingDealsForMonth(
         from += limit;
     }
 
-    return allRows.map(mapRowToWonDeal);
+    return allRows.map((row) => mapRowToWonDeal(row));
 }
 
 /**
@@ -508,7 +393,7 @@ export async function fetchVendasForMonth(
     while (true) {
         const { data, error } = await supabase
             .from("deals")
-            .select("*")
+            .select(DEAL_COLUMNS)
             .gte("data_fechamento", startDate)
             .lt("data_fechamento", endDate)
             .not("pipeline_id", "eq", ELOPEMENT_PIPELINE_ID)
@@ -529,7 +414,7 @@ export async function fetchVendasForMonth(
 
     return {
         count: allRows.length,
-        deals: allRows.map(mapRowToWonDeal)
+        deals: allRows.map((row) => mapRowToWonDeal(row)),
     };
 }
 
@@ -553,7 +438,7 @@ export async function fetchClosersForMonth(
     while (true) {
         const { data, error } = await supabase
             .from("deals")
-            .select("*")
+            .select(DEAL_COLUMNS)
             .gte("data_closer", startDate)
             .lt("data_closer", endDate)
             .not("pipeline_id", "eq", ELOPEMENT_PIPELINE_ID)
@@ -574,7 +459,7 @@ export async function fetchClosersForMonth(
 
     return {
         count: allRows.length,
-        deals: allRows.map(mapRowToWonDeal)
+        deals: allRows.map((row) => mapRowToWonDeal(row)),
     };
 }
 
@@ -597,7 +482,7 @@ export async function fetchElopementDealsForMonth(
     while (true) {
         const { data, error } = await supabase
             .from("deals")
-            .select("*")
+            .select(DEAL_COLUMNS)
             .gte("created_at", startDate.toISOString())
             .lte("created_at", endDate.toISOString())
             .eq("pipeline", "Elopment Wedding")
@@ -615,7 +500,7 @@ export async function fetchElopementDealsForMonth(
         from += limit;
     }
 
-    return allRows.map(mapRowToWonDeal);
+    return allRows.map((row) => mapRowToWonDeal(row));
 }
 
 /**
@@ -633,28 +518,19 @@ export async function fetchAllFunnelDealsForMonth(
         fetchElopementDealsForMonth(year, month),
     ]);
 
-    // Deduplicate by deal ID
-    const existingIds = new Set(createdDeals.map(d => d.id));
-    const allDeals = [
-        ...createdDeals,
-        ...vendasData.deals.filter(d => !existingIds.has(d.id)),
-    ];
-
-    const existingIds2 = new Set(allDeals.map(d => d.id));
-    const withClosers = [
-        ...allDeals,
-        ...closersData.deals.filter(d => !existingIds2.has(d.id)),
-    ];
-
-    // Add Elopement deals (for Leads count only)
-    const existingIds3 = new Set(withClosers.map(d => d.id));
-    const finalDeals = [
-        ...withClosers,
-        ...elopementDeals.filter(d => !existingIds3.has(d.id)),
-    ];
-
-    return finalDeals;
+    // Single-pass dedup (createdDeals take priority)
+    const seen = new Set<string>();
+    const result: WonDeal[] = [];
+    for (const deal of [...createdDeals, ...vendasData.deals, ...closersData.deals, ...elopementDeals]) {
+        if (!seen.has(deal.id)) {
+            seen.add(deal.id);
+            result.push(deal);
+        }
+    }
+    return result;
 }
+
+// ─── ADS SPEND ─────────────────────────────────────────────────────────────────
 
 export interface AdsSpendData {
     spend: number;

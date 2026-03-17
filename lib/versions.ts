@@ -7,6 +7,22 @@ export interface VersionEntry {
 
 export const VERSION_HISTORY: VersionEntry[] = [
     {
+        version: "2.3.0",
+        date: "17/03/2026",
+        description: "Refactoring estrutural e otimizações de performance.",
+        changes: [
+            "Carregamento de dados paralelo via Promise.all (7 fontes simultâneas — antes sequencial).",
+            "SELECT de ~44 colunas específicas em vez de SELECT * (redução de ~80% no payload de rede).",
+            "Centralização do mapeamento row→WonDeal em função única (eliminação de 4 cópias duplicadas).",
+            "Memoização de chatContext e allDeals no Dashboard (evita recálculo a cada render).",
+            "Otimização de fetchStagesFromDb com limit (evita fetch de milhares de rows).",
+            "Uso de .upsert() nativo do Supabase em upsertMonthlyTarget (1 query em vez de 2).",
+            "Validação Zod na API de chat (limites de tamanho e tipos para messages e context).",
+            "STATUS_MAP promovido a constante de módulo (evita recriação por row).",
+            "Dedup simplificada em fetchAllFunnelDealsForMonth (1 Set em vez de 3).",
+        ],
+    },
+    {
         version: "2.2.0",
         date: "13/03/2026",
         description: "Sync automático AC → Supabase via Edge Function e botão de sincronização manual.",

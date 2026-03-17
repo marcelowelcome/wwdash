@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { fetchAllDealsFromDb, fetchFieldMetaFromDb, fetchStagesFromDb, fetchWonDealsFromDb, CLOSER_GROUP_ID } from "@/lib/supabase-api";
 import { supabase } from "@/lib/supabase";
 import { computeMetrics, type Metrics } from "@/lib/metrics";
@@ -189,37 +189,30 @@ export default function Dashboard() {
         setLoading(true);
         setError(null);
         try {
-            setLoadStep("Configurando mapeamento de campos…");
-            const [fieldMap, stageMap] = await Promise.all([
+            setLoadStep("Carregando dados…");
+
+            // Fetch all data sources in parallel
+            const [fieldMap, stageMap, sdrP1, sdrP3, closerData, wonData, syncLogs] = await Promise.all([
                 fetchFieldMetaFromDb(),
                 fetchStagesFromDb(),
+                fetchAllDealsFromDb("1", 180),
+                fetchAllDealsFromDb("3", 180),
+                fetchAllDealsFromDb(CLOSER_GROUP_ID, 365),
+                fetchWonDealsFromDb(CLOSER_GROUP_ID),
+                supabase.from("sync_logs").select("*").order("id", { ascending: false }).limit(1),
             ]);
+
             setAcFieldMap(fieldMap);
             setAcStageMap(stageMap);
-
-            setLoadStep("Carregando leads SDR (últimos 180 dias)…");
-            const sdrP1 = await fetchAllDealsFromDb("1", 180);
-            const sdrP3 = await fetchAllDealsFromDb("3", 180);
             const combinedSdr = [...sdrP1, ...sdrP3];
             setSdrDeals(combinedSdr);
-
-            setLoadStep("Carregando pipeline Closer (últimos 365 dias)…");
-            const closerDeals = await fetchAllDealsFromDb(CLOSER_GROUP_ID, 365);
-            setCloserDeals(closerDeals);
-            setLoadStep("Carregando casamentos ganhos / planejamento…");
-            const wonDealsData = await fetchWonDealsFromDb(CLOSER_GROUP_ID);
-            setWonDeals(wonDealsData);
+            setCloserDeals(closerData);
+            setWonDeals(wonData);
 
             setLoadStep("Calculando métricas…");
-            setMetrics(computeMetrics(sdrP1, closerDeals, wonDealsData, fieldMap, stageMap));
+            setMetrics(computeMetrics(sdrP1, closerData, wonData, fieldMap, stageMap));
 
-            // Fetch last sync log
-            const { data: logs } = await supabase
-                .from("sync_logs")
-                .select("*")
-                .order("id", { ascending: false })
-                .limit(1);
-            if (logs && logs.length > 0) setLastSyncLog(logs[0] as SyncLog);
+            if (syncLogs.data && syncLogs.data.length > 0) setLastSyncLog(syncLogs.data[0] as SyncLog);
 
             setLastUpdate(new Date().toLocaleTimeString("pt-BR"));
         } catch (e) {
@@ -312,22 +305,24 @@ export default function Dashboard() {
         );
     }
 
-    if (!metrics) return null;
+    // Memoize derived data to avoid recalculating on every render
+    const allDeals = useMemo(
+        () => deduplicateDeals([...wonDeals, ...sdrDeals, ...closerDeals]),
+        [wonDeals, sdrDeals, closerDeals]
+    );
 
-    const chatContext = buildTabContext(tab, {
-        metrics,
-        sdrDeals,
-        closerDeals,
-        wonDeals,
-        fieldMap: acFieldMap,
-        stageMap: acStageMap,
-    });
+    const chatContext = useMemo(
+        () => metrics ? buildTabContext(tab, { metrics, sdrDeals, closerDeals, wonDeals, fieldMap: acFieldMap, stageMap: acStageMap }) : "",
+        [tab, metrics, sdrDeals, closerDeals, wonDeals, acFieldMap, acStageMap]
+    );
+
+    if (!metrics) return null;
 
     return (
         <div style={{ background: T.bg, minHeight: "100vh", color: T.white, fontFamily: "'Trebuchet MS', 'Lucida Grande', sans-serif" }}>
             <Header {...headerProps} />
             <div style={{ maxWidth: 1200, margin: "0 auto", padding: "24px 28px 48px" }}>
-                {tab === "overview" && <OverviewTab sdrDeals={sdrDeals} closerDeals={closerDeals} wonDeals={wonDeals} fieldMap={acFieldMap} stageMap={acStageMap} allDeals={deduplicateDeals([...sdrDeals, ...closerDeals, ...wonDeals])} />}
+                {tab === "overview" && <OverviewTab sdrDeals={sdrDeals} closerDeals={closerDeals} wonDeals={wonDeals} fieldMap={acFieldMap} stageMap={acStageMap} allDeals={allDeals} />}
                 {tab === "sdr" && <SDRTab deals={sdrDeals} fieldMap={acFieldMap} />}
                 {tab === "funnel" && <FunnelTab m={metrics} />}
                 {tab === "closer" && <CloserTab m={metrics} />}
@@ -335,7 +330,7 @@ export default function Dashboard() {
                 {tab === "contratos" && <ContratosTab deals={wonDeals} fieldMap={acFieldMap} />}
                 {tab === "perfil-score" && <PerfilScoreTab wonDeals={wonDeals} closerDeals={closerDeals} sdrDeals={sdrDeals} fieldMap={acFieldMap} />}
                 {tab === "dictionary" && <DictionaryTab />}
-                {tab === "funnel-metas" && <FunnelMetaTab allDeals={deduplicateDeals([...sdrDeals, ...closerDeals, ...wonDeals])} />}
+                {tab === "funnel-metas" && <FunnelMetaTab allDeals={allDeals} />}
                 {tab === "chat" && (
                     <ChatTab
                         messages={chat.messages}
