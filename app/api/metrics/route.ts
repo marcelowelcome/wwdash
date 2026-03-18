@@ -48,7 +48,8 @@ const VALID_PERIODS = new Set([30, 90, 180, 365, 0]);
 // ─── DATA FETCHER ──────────────────────────────────────────────────────────
 
 async function fetchAndCompute(period: number): Promise<CachedPayload> {
-  const daysBack = periodToDaysBack(period as any);
+  const validPeriod = VALID_PERIODS.has(period) ? period : 180;
+  const daysBack = periodToDaysBack(validPeriod as import("@/lib/supabase-api").GlobalPeriod);
 
   const results = await Promise.allSettled([
     fetchFieldMetaFromDb(),
@@ -98,15 +99,24 @@ async function fetchAndCompute(period: number): Promise<CachedPayload> {
 
 // ─── BACKGROUND REVALIDATION ────────────────────────────────────────────────
 
+const BACKOFF_MS = 30_000; // 30s backoff after failed revalidation
+const failedAt = new Map<number, number>(); // period → timestamp of last failure
+
 function triggerRevalidation(period: number) {
   if (revalidatingSet.has(period)) return;
+  // Backoff: skip if last failure was recent
+  const lastFail = failedAt.get(period) || 0;
+  if (Date.now() - lastFail < BACKOFF_MS) return;
+
   revalidatingSet.add(period);
   fetchAndCompute(period)
     .then((payload) => {
       cache.set(period, { data: payload, at: Date.now() });
+      failedAt.delete(period); // clear backoff on success
     })
     .catch((err) => {
       console.error(`[api/metrics] Revalidation failed for period=${period}:`, err);
+      failedAt.set(period, Date.now()); // set backoff timer
     })
     .finally(() => {
       revalidatingSet.delete(period);
