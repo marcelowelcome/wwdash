@@ -63,7 +63,7 @@ function TrendTooltip({ active, payload }: { active?: boolean; payload?: any[] }
             <div style={{ color: C.blue }}>MQL: <strong>{d.mql}</strong></div>
             <div style={{ color: C.amber }}>Agendamentos: <strong>{d.agendamentos}</strong></div>
             <div style={{ color: T.muted }}>
-                Taxa: <strong style={{ color: d.taxaAgend < 15 ? C.red : d.taxaAgend < 25 ? C.amber : C.green }}>{d.taxaAgend}%</strong>
+                Taxa: <strong style={{ color: d.taxaAgend < 15 ? C.red : d.taxaAgend < 25 ? C.amber : C.green }}>{d.taxaAgend.toFixed(1)}%</strong>
                 {" "}(meta: 45%)
             </div>
             {d.reunioes > 0 && <div style={{ color: C.purple }}>Reunioes: <strong>{d.reunioes}</strong></div>}
@@ -76,7 +76,7 @@ function DeltaChip({ delta }: { delta: number | null }) {
     if (delta == null) return null;
     return (
         <div style={{ fontSize: 10, marginTop: 4, color: delta >= 0 ? C.green : C.red }}>
-            {delta >= 0 ? "+" : ""}{delta}% vs ant.
+            {delta >= 0 ? "+" : ""}{delta.toFixed(1)}% vs ant.
         </div>
     );
 }
@@ -220,9 +220,9 @@ function DayDetail({ day, onClose }: {
                 {[
                     { l: "MQL", v: day.mql, c: C.blue },
                     { l: "Agendamentos", v: day.agendamentos, c: C.amber },
-                    { l: "Taxa Agend.", v: `${day.taxaAgend}%`, c: day.taxaAgend < 15 ? C.red : day.taxaAgend < 25 ? C.amber : C.green },
+                    { l: "Taxa Agend.", v: `${day.taxaAgend.toFixed(1)}%`, c: day.taxaAgend < 15 ? C.red : day.taxaAgend < 25 ? C.amber : C.green },
                     { l: "Reunioes", v: day.reunioes, c: C.purple },
-                    { l: "Comparecimento", v: `${day.taxaComp}%`, c: C.green },
+                    { l: "Comparecimento", v: `${day.taxaComp.toFixed(1)}%`, c: C.green },
                     { l: "Qualificados", v: day.qualificados, c: T.muted },
                 ].map(kpi => (
                     <div key={kpi.l} style={{ background: "rgba(255,255,255,0.025)", borderRadius: 8, padding: "9px 11px" }}>
@@ -265,39 +265,6 @@ function DayDetail({ day, onClose }: {
                     ))}
                 </div>
             )}
-        </div>
-    );
-}
-
-/* ─── Helper: SDR Ranking Table ───────────────────────────────────────────── */
-function SDRRanking({ ranking, periodLabel }: { ranking: SDRMetrics["sdrRanking"]; periodLabel: string }) {
-    return (
-        <div style={s.card}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: T.white, marginBottom: 14 }}>
-                Ranking SDR · {periodLabel}
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr", gap: 8, padding: "0 8px 8px", fontSize: 10, color: T.muted, letterSpacing: "0.6px", textTransform: "uppercase", borderBottom: `1px solid ${T.border}` }}>
-                <span>SDR</span><span style={{ textAlign: "right" }}>MQL</span><span style={{ textAlign: "right" }}>Agend.</span><span style={{ textAlign: "right" }}>Taxa</span>
-            </div>
-            {ranking.map((sdr, idx) => (
-                <div key={sdr.ownerId} style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr", gap: 8, padding: "11px 8px", borderBottom: `1px solid ${T.border}`, borderRadius: 4, alignItems: "center" }}>
-                    <span style={{ fontSize: 12, color: T.white, display: "flex", alignItems: "center", gap: 7 }}>
-                        <span style={{
-                            width: 18, height: 18, borderRadius: "50%",
-                            background: idx === 0 ? C.green : idx === ranking.length - 1 ? C.red : C.amber,
-                            display: "inline-flex", alignItems: "center", justifyContent: "center",
-                            fontSize: 9, fontWeight: 800, color: "#000", flexShrink: 0,
-                        }}>{idx + 1}</span>
-                        {sdr.ownerId}
-                    </span>
-                    <span style={{ fontSize: 12, ...s.mono, color: C.blue, textAlign: "right" }}>{sdr.mql}</span>
-                    <span style={{ fontSize: 12, ...s.mono, color: C.amber, textAlign: "right" }}>{sdr.agendamentos}</span>
-                    <div style={{ textAlign: "right" }}>
-                        <div style={{ fontSize: 14, ...s.mono, fontWeight: 700, color: sdr.taxa < 15 ? C.red : sdr.taxa < 25 ? C.amber : C.green }}>{sdr.taxa.toFixed(1)}%</div>
-                        <MiniBar pct={sdr.taxa * 2.5} color={sdr.taxa < 15 ? C.red : sdr.taxa < 25 ? C.amber : C.green} />
-                    </div>
-                </div>
-            ))}
         </div>
     );
 }
@@ -548,15 +515,10 @@ export function SDRTab({ deals, fieldMap }: SDRTabProps) {
             </div>
 
             {/* ── 6. BOTTOM GRID ────────────────────────────────────────────── */}
-            <div style={{ display: "grid", gridTemplateColumns: dayData ? "1.1fr 0.9fr" : "1fr 1fr", gap: 12 }}>
-                {/* Left: Day detail or SDR Ranking */}
-                {dayData ? (
+            <div style={{ display: "grid", gridTemplateColumns: dayData ? "1.1fr 0.9fr" : "1fr", gap: 12 }}>
+                {dayData && (
                     <DayDetail day={dayData} onClose={() => setSelectedDay(null)} />
-                ) : (
-                    <SDRRanking ranking={m.sdrRanking} periodLabel={periodLabel} />
                 )}
-
-                {/* Right: DOW heatmap */}
                 <DOWHeatmap dowPattern={m.dowPattern} />
             </div>
 
