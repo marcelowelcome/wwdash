@@ -4,6 +4,20 @@ import { type WonDeal, type MonthlyTarget } from "./schemas";
 // ─── CONFIG ────────────────────────────────────────────────────────────────────
 export const SDR_GROUP_ID = "1";
 export const CLOSER_GROUP_ID = "3";
+
+// Global period filter — controls the data window for all deal fetches
+export type GlobalPeriod = 30 | 90 | 180 | 365 | 0;
+export const DEFAULT_GLOBAL_PERIOD: GlobalPeriod = 180;
+export const PERIOD_OPTIONS: { value: GlobalPeriod; label: string }[] = [
+    { value: 30, label: "30 dias" },
+    { value: 90, label: "90 dias" },
+    { value: 180, label: "180 dias" },
+    { value: 365, label: "1 ano" },
+    { value: 0, label: "Tudo" },
+];
+export function periodToDaysBack(period: GlobalPeriod): number {
+    return period === 0 ? 3650 : period;
+}
 export const TRAINING_MOTIVE = "Para closer ter mais reuniões";
 
 // Fallback: map group_id → pipeline name for deals missing group_id
@@ -133,6 +147,7 @@ export async function fetchAllDealsFromDb(
     let allRows: any[] = [];
     let from = 0;
     const limit = 1000;
+    const maxPages = 20; // Safety limit: max 20k deals per group
 
     // Build filter: match group_id OR pipeline name (fallback for deals missing group_id)
     const pipelineName = GROUP_TO_PIPELINE[groupId];
@@ -140,7 +155,9 @@ export async function fetchAllDealsFromDb(
         ? `group_id.eq.${groupId},pipeline.eq.${pipelineName}`
         : `group_id.eq.${groupId}`;
 
-    while (true) {
+    let pages = 0;
+    while (pages < maxPages) {
+        pages++;
         const { data, error } = await supabase
             .from("deals")
             .select(DEAL_COLUMNS)
@@ -151,7 +168,7 @@ export async function fetchAllDealsFromDb(
 
         if (error) {
             console.error(`[fetchAllDealsFromDb] Error fetching from group ${groupId}:`, error);
-            break;
+            throw new Error(`Falha ao buscar deals do grupo ${groupId}: ${error.message}`);
         }
         if (!data || data.length === 0) break;
 
@@ -171,8 +188,11 @@ export async function fetchWonDealsFromDb(_groupId: string): Promise<WonDeal[]> 
     let allRows: any[] = [];
     let from = 0;
     const limit = 1000;
+    const maxPages = 20;
 
-    while (true) {
+    let pages = 0;
+    while (pages < maxPages) {
+        pages++;
         const { data, error } = await supabase
             .from("deals")
             .select(DEAL_COLUMNS)
@@ -182,7 +202,7 @@ export async function fetchWonDealsFromDb(_groupId: string): Promise<WonDeal[]> 
 
         if (error) {
             console.error(`[fetchWonDealsFromDb] Error fetching won deals:`, error);
-            break;
+            throw new Error(`Falha ao buscar deals ganhos: ${error.message}`);
         }
 
         if (!data || data.length === 0) break;
@@ -541,37 +561,25 @@ export interface AdsSpendData {
 }
 
 /**
- * Fetches Meta Ads spend data from cache.
- * Tries pipeline="wedding" first, then pipeline=null for backwards compatibility.
+ * Fetches ads spend data for a given source (meta_ads or google_ads).
+ * Single query using .or() for pipeline="wedding" OR pipeline IS NULL.
  */
-export async function fetchMetaAdsSpend(
+async function fetchAdsSpendBySource(
     year: number,
-    month: number
+    month: number,
+    source: "meta_ads" | "google_ads"
 ): Promise<AdsSpendData> {
     try {
-        // Try with pipeline="wedding" first (current data format)
-        let { data, error } = await supabase
+        const { data, error } = await supabase
             .from("ads_spend_cache")
-            .select("spend, impressions, clicks, cpc, cpm")
+            .select("spend, impressions, clicks, cpc, cpm, pipeline")
             .eq("year", year)
             .eq("month", month)
-            .eq("source", "meta_ads")
-            .eq("pipeline", "wedding")
+            .eq("source", source)
+            .or("pipeline.eq.wedding,pipeline.is.null")
+            .order("pipeline", { ascending: false, nullsFirst: false })
+            .limit(1)
             .maybeSingle();
-
-        // If not found, try with pipeline=null (legacy format)
-        if (!data) {
-            const result = await supabase
-                .from("ads_spend_cache")
-                .select("spend, impressions, clicks, cpc, cpm")
-                .eq("year", year)
-                .eq("month", month)
-                .eq("source", "meta_ads")
-                .is("pipeline", null)
-                .maybeSingle();
-            data = result.data;
-            error = result.error;
-        }
 
         if (error || !data) {
             return { spend: 0, impressions: 0, clicks: 0, cpc: 0, cpm: 0 };
@@ -585,58 +593,23 @@ export async function fetchMetaAdsSpend(
             cpm: Number(data.cpm) || 0,
         };
     } catch (error) {
-        console.error("[fetchMetaAdsSpend] Error:", error);
+        console.error(`[fetchAdsSpend/${source}] Error:`, error);
         return { spend: 0, impressions: 0, clicks: 0, cpc: 0, cpm: 0 };
     }
 }
 
 /**
- * Fetches Google Ads spend data from cache.
- * Tries pipeline="wedding" first, then pipeline=null for backwards compatibility.
+ * Fetches Meta Ads spend data from cache.
  */
-export async function fetchGoogleAdsSpend(
-    year: number,
-    month: number
-): Promise<AdsSpendData> {
-    try {
-        // Try with pipeline="wedding" first
-        let { data, error } = await supabase
-            .from("ads_spend_cache")
-            .select("spend, impressions, clicks, cpc, cpm")
-            .eq("year", year)
-            .eq("month", month)
-            .eq("source", "google_ads")
-            .eq("pipeline", "wedding")
-            .maybeSingle();
+export async function fetchMetaAdsSpend(year: number, month: number): Promise<AdsSpendData> {
+    return fetchAdsSpendBySource(year, month, "meta_ads");
+}
 
-        // If not found, try with pipeline=null
-        if (!data) {
-            const result = await supabase
-                .from("ads_spend_cache")
-                .select("spend, impressions, clicks, cpc, cpm")
-                .eq("year", year)
-                .eq("month", month)
-                .eq("source", "google_ads")
-                .is("pipeline", null)
-                .maybeSingle();
-            data = result.data;
-        }
-
-        if (!data) {
-            return { spend: 0, impressions: 0, clicks: 0, cpc: 0, cpm: 0 };
-        }
-
-        return {
-            spend: Number(data.spend) || 0,
-            impressions: data.impressions || 0,
-            clicks: data.clicks || 0,
-            cpc: Number(data.cpc) || 0,
-            cpm: Number(data.cpm) || 0,
-        };
-    } catch (error) {
-        console.error("[fetchGoogleAdsSpend] Error:", error);
-        return { spend: 0, impressions: 0, clicks: 0, cpc: 0, cpm: 0 };
-    }
+/**
+ * Fetches Google Ads spend data from cache.
+ */
+export async function fetchGoogleAdsSpend(year: number, month: number): Promise<AdsSpendData> {
+    return fetchAdsSpendBySource(year, month, "google_ads");
 }
 
 /**
