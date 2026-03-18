@@ -269,6 +269,17 @@ export default function Dashboard() {
         lastSyncLog,
     };
 
+    // Hooks must be called before any early returns (Rules of Hooks)
+    const allDeals = useMemo(
+        () => deduplicateDeals([...wonDeals, ...sdrDeals, ...closerDeals]),
+        [wonDeals, sdrDeals, closerDeals]
+    );
+
+    const chatContext = useMemo(
+        () => metrics ? buildTabContext(tab, { metrics, sdrDeals, closerDeals, wonDeals, fieldMap: acFieldMap, stageMap: acStageMap }) : "",
+        [tab, metrics, sdrDeals, closerDeals, wonDeals, acFieldMap, acStageMap]
+    );
+
     if (loading) {
         return (
             <div style={{ background: T.bg, minHeight: "100vh", color: T.white, fontFamily: "'Trebuchet MS', sans-serif", display: "flex", flexDirection: "column" }}>
@@ -304,17 +315,6 @@ export default function Dashboard() {
             </div>
         );
     }
-
-    // Memoize derived data to avoid recalculating on every render
-    const allDeals = useMemo(
-        () => deduplicateDeals([...wonDeals, ...sdrDeals, ...closerDeals]),
-        [wonDeals, sdrDeals, closerDeals]
-    );
-
-    const chatContext = useMemo(
-        () => metrics ? buildTabContext(tab, { metrics, sdrDeals, closerDeals, wonDeals, fieldMap: acFieldMap, stageMap: acStageMap }) : "",
-        [tab, metrics, sdrDeals, closerDeals, wonDeals, acFieldMap, acStageMap]
-    );
 
     if (!metrics) return null;
 
