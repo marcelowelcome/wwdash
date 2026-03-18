@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
-import { fetchAllDealsFromDb, fetchFieldMetaFromDb, fetchStagesFromDb, fetchWonDealsFromDb, CLOSER_GROUP_ID } from "@/lib/supabase-api";
+import { fetchAllDealsFromDb, fetchFieldMetaFromDb, fetchStagesFromDb, fetchWonDealsFromDb, CLOSER_GROUP_ID, type GlobalPeriod, DEFAULT_GLOBAL_PERIOD, PERIOD_OPTIONS, periodToDaysBack } from "@/lib/supabase-api";
 import { supabase } from "@/lib/supabase";
 import { computeMetrics, type Metrics } from "@/lib/metrics";
 import { T, statusColor } from "./dashboard/theme";
@@ -70,6 +70,8 @@ interface HeaderProps {
     syncing: boolean;
     syncResult: { synced?: number; error?: string } | null;
     lastSyncLog: SyncLog | null;
+    globalPeriod: GlobalPeriod;
+    onPeriodChange: (p: GlobalPeriod) => void;
 }
 
 function formatSyncAge(iso: string): string {
@@ -82,7 +84,7 @@ function formatSyncAge(iso: string): string {
     return `${Math.floor(h / 24)}d atrás`;
 }
 
-function Header({ tab, setTab, metrics, loading, lastUpdate, onRefresh, onVersionClick, onSync, syncing, syncResult, lastSyncLog }: HeaderProps) {
+function Header({ tab, setTab, metrics, loading, lastUpdate, onRefresh, onVersionClick, onSync, syncing, syncResult, lastSyncLog, globalPeriod, onPeriodChange }: HeaderProps) {
     return (
         <div style={{ background: T.surface, borderBottom: `1px solid ${T.border}`, padding: "0 28px" }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", maxWidth: 1200, margin: "0 auto", padding: "16px 0" }}>
@@ -157,7 +159,7 @@ function Header({ tab, setTab, metrics, loading, lastUpdate, onRefresh, onVersio
                     {lastUpdate && <span style={{ fontSize: 10, color: T.muted }}>Atualizado {lastUpdate}</span>}
                 </div>
             </div>
-            <div style={{ display: "flex", gap: 2, maxWidth: 1200, margin: "0 auto" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 2, maxWidth: 1200, margin: "0 auto" }}>
                 {TABS.map((t) => (
                     <button
                         key={t.id}
@@ -168,6 +170,28 @@ function Header({ tab, setTab, metrics, loading, lastUpdate, onRefresh, onVersio
                         {t.label}
                     </button>
                 ))}
+                <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 4, padding: "0 4px" }}>
+                    <span style={{ fontSize: 9, color: T.border, marginRight: 2 }}>Janela:</span>
+                    {PERIOD_OPTIONS.map(opt => (
+                        <button
+                            key={opt.value}
+                            onClick={() => onPeriodChange(opt.value)}
+                            style={{
+                                background: globalPeriod === opt.value ? `${T.gold}20` : "transparent",
+                                color: globalPeriod === opt.value ? T.gold : T.border,
+                                border: globalPeriod === opt.value ? `1px solid ${T.gold}55` : "1px solid transparent",
+                                borderRadius: 4,
+                                padding: "2px 8px",
+                                fontSize: 9,
+                                fontWeight: 600,
+                                cursor: "pointer",
+                                fontFamily: "inherit",
+                            }}
+                        >
+                            {opt.label}
+                        </button>
+                    ))}
+                </div>
             </div>
         </div>
     );
@@ -195,11 +219,26 @@ export default function Dashboard() {
     const [lastSyncLog, setLastSyncLog] = useState<SyncLog | null>(null);
     const chat = useChat();
 
+    // Global period filter (persisted in localStorage)
+    const [globalPeriod, setGlobalPeriod] = useState<GlobalPeriod>(() => {
+        if (typeof window === "undefined") return DEFAULT_GLOBAL_PERIOD;
+        const stored = localStorage.getItem("ww-global-period");
+        if (stored) {
+            const val = parseInt(stored, 10);
+            if ([30, 90, 180, 365, 0].includes(val)) return val as GlobalPeriod;
+        }
+        return DEFAULT_GLOBAL_PERIOD;
+    });
+    const handlePeriodChange = useCallback((p: GlobalPeriod) => {
+        setGlobalPeriod(p);
+        localStorage.setItem("ww-global-period", String(p));
+    }, []);
+
     // Fetch pre-computed metrics from server API (cached, stale-while-revalidate)
     const loadFromServer = useCallback(async (): Promise<boolean> => {
         try {
             setLoadStep("Carregando métricas do servidor…");
-            const resp = await fetch("/api/metrics");
+            const resp = await fetch(`/api/metrics?period=${globalPeriod}`);
             if (!resp.ok) return false;
             const data = await resp.json();
             if (!data.metrics) return false;
@@ -217,21 +256,22 @@ export default function Dashboard() {
             console.warn("[Dashboard] Server metrics unavailable, falling back to direct queries:", e);
             return false;
         }
-    }, []);
+    }, [globalPeriod]);
 
     // Direct Supabase queries (fallback when server metrics unavailable)
     const loadFromSupabase = useCallback(async () => {
         setLoadStep("Carregando dados…");
+        const daysBack = periodToDaysBack(globalPeriod);
 
         // Fetch all data sources in parallel — use allSettled so partial failures
         // don't discard all data (e.g. sync_logs failing shouldn't block the dashboard)
         const results = await Promise.allSettled([
             fetchFieldMetaFromDb(),                             // 0
             fetchStagesFromDb(),                                // 1
-            fetchAllDealsFromDb("1", 180),                      // 2 SDR P1
-            fetchAllDealsFromDb("3", 180),                      // 3 SDR P3
-            fetchAllDealsFromDb(CLOSER_GROUP_ID, 365),          // 4 Closer
-            fetchWonDealsFromDb(CLOSER_GROUP_ID),               // 5 Won
+            fetchAllDealsFromDb("1", daysBack),                 // 2 SDR P1
+            fetchAllDealsFromDb("3", daysBack),                 // 3 SDR P3
+            fetchAllDealsFromDb(CLOSER_GROUP_ID, daysBack),     // 4 Closer
+            fetchWonDealsFromDb(CLOSER_GROUP_ID),               // 5 Won (always all time)
             supabase.from("sync_logs").select("*").order("id", { ascending: false }).limit(1), // 6
         ]);
 
@@ -276,7 +316,7 @@ export default function Dashboard() {
         }
 
         setLastUpdate(new Date().toLocaleTimeString("pt-BR"));
-    }, []);
+    }, [globalPeriod]);
 
     const loadData = useCallback(async () => {
         setLoading(true);
@@ -342,6 +382,8 @@ export default function Dashboard() {
         syncing,
         syncResult,
         lastSyncLog,
+        globalPeriod,
+        onPeriodChange: handlePeriodChange,
     };
 
     if (loading) {

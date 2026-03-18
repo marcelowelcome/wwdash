@@ -6,6 +6,7 @@ import {
   fetchAllDealsFromDb,
   fetchWonDealsFromDb,
   CLOSER_GROUP_ID,
+  periodToDaysBack,
 } from "@/lib/supabase-api";
 import { computeMetrics, type Metrics } from "@/lib/metrics";
 import { type WonDeal } from "@/lib/schemas";
@@ -34,30 +35,29 @@ interface CachedPayload {
   computedAt: string;
 }
 
-// ─── IN-MEMORY CACHE ────────────────────────────────────────────────────────
+// ─── IN-MEMORY CACHE (keyed by period) ─────────────────────────────────────
 
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
-const STALE_TTL_MS = 10 * 60 * 1000; // 10 minutes (serve stale while revalidating)
+const STALE_TTL_MS = 10 * 60 * 1000; // 10 minutes
 
-let cachedData: CachedPayload | null = null;
-let cachedAt = 0; // timestamp ms
-let revalidating = false; // prevents concurrent revalidation
+const cache = new Map<number, { data: CachedPayload; at: number }>();
+const revalidatingSet = new Set<number>();
 
-// ─── DATA FETCHER (mirrors Dashboard.tsx loadData) ──────────────────────────
+const VALID_PERIODS = new Set([30, 90, 180, 365, 0]);
 
-async function fetchAndCompute(): Promise<CachedPayload> {
+// ─── DATA FETCHER ──────────────────────────────────────────────────────────
+
+async function fetchAndCompute(period: number): Promise<CachedPayload> {
+  const daysBack = periodToDaysBack(period as any);
+
   const results = await Promise.allSettled([
-    fetchFieldMetaFromDb(), // 0
-    fetchStagesFromDb(), // 1
-    fetchAllDealsFromDb("1", 180), // 2  SDR P1
-    fetchAllDealsFromDb("3", 180), // 3  SDR P3
-    fetchAllDealsFromDb(CLOSER_GROUP_ID, 365), // 4  Closer
-    fetchWonDealsFromDb(CLOSER_GROUP_ID), // 5  Won
-    supabase
-      .from("sync_logs")
-      .select("*")
-      .order("id", { ascending: false })
-      .limit(1), // 6
+    fetchFieldMetaFromDb(),
+    fetchStagesFromDb(),
+    fetchAllDealsFromDb("1", daysBack),
+    fetchAllDealsFromDb("3", daysBack),
+    fetchAllDealsFromDb(CLOSER_GROUP_ID, daysBack),
+    fetchWonDealsFromDb(CLOSER_GROUP_ID), // always all time
+    supabase.from("sync_logs").select("*").order("id", { ascending: false }).limit(1),
   ]);
 
   const get = <T,>(idx: number, fallback: T): T =>
@@ -72,10 +72,7 @@ async function fetchAndCompute(): Promise<CachedPayload> {
   const closerData = get<WonDeal[]>(4, []);
   const wonData = get<WonDeal[]>(5, []);
 
-  // If ALL deal fetches failed, propagate error
-  const dealsFailed = [2, 3, 4, 5].filter(
-    (i) => results[i].status === "rejected"
-  );
+  const dealsFailed = [2, 3, 4, 5].filter((i) => results[i].status === "rejected");
   if (dealsFailed.length === 4) {
     const firstErr = (results[2] as PromiseRejectedResult).reason;
     throw new Error(`Falha ao buscar deals: ${firstErr}`);
@@ -84,20 +81,8 @@ async function fetchAndCompute(): Promise<CachedPayload> {
   const combinedSdr = [...sdrP1, ...sdrP3];
   const metrics = computeMetrics(sdrP1, closerData, wonData, fieldMap, stageMap);
 
-  // Sync log (non-critical)
   const syncResult = get<{ data: SyncLog[] | null }>(6, { data: null });
-  const lastSyncLog =
-    syncResult.data && syncResult.data.length > 0 ? syncResult.data[0] : null;
-
-  // Log partial failures
-  const failures = results
-    .map((r, i) => (r.status === "rejected" ? i : null))
-    .filter((i) => i !== null);
-  if (failures.length > 0) {
-    console.warn(
-      `[api/metrics] Partial load failures at indices: ${failures.join(", ")}`
-    );
-  }
+  const lastSyncLog = syncResult.data && syncResult.data.length > 0 ? syncResult.data[0] : null;
 
   return {
     metrics,
@@ -113,33 +98,36 @@ async function fetchAndCompute(): Promise<CachedPayload> {
 
 // ─── BACKGROUND REVALIDATION ────────────────────────────────────────────────
 
-function triggerRevalidation() {
-  if (revalidating) return;
-  revalidating = true;
-  fetchAndCompute()
+function triggerRevalidation(period: number) {
+  if (revalidatingSet.has(period)) return;
+  revalidatingSet.add(period);
+  fetchAndCompute(period)
     .then((payload) => {
-      cachedData = payload;
-      cachedAt = Date.now();
-      console.log("[api/metrics] Cache revalidated at", payload.computedAt);
+      cache.set(period, { data: payload, at: Date.now() });
     })
     .catch((err) => {
-      console.error("[api/metrics] Background revalidation failed:", err);
+      console.error(`[api/metrics] Revalidation failed for period=${period}:`, err);
     })
     .finally(() => {
-      revalidating = false;
+      revalidatingSet.delete(period);
     });
 }
 
-// ─── GET: return cached or fresh metrics ────────────────────────────────────
+// ─── GET ────────────────────────────────────────────────────────────────────
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    const now = Date.now();
-    const age = now - cachedAt;
+    const { searchParams } = new URL(request.url);
+    const periodParam = parseInt(searchParams.get("period") || "180", 10);
+    const period = VALID_PERIODS.has(periodParam) ? periodParam : 180;
 
-    // Cache hit: fresh
-    if (cachedData && age < CACHE_TTL_MS) {
-      return NextResponse.json(cachedData, {
+    const now = Date.now();
+    const entry = cache.get(period);
+    const age = entry ? now - entry.at : Infinity;
+
+    // Cache HIT (fresh)
+    if (entry && age < CACHE_TTL_MS) {
+      return NextResponse.json(entry.data, {
         headers: {
           "Cache-Control": "public, s-maxage=300, stale-while-revalidate=600",
           "X-Cache": "HIT",
@@ -148,10 +136,10 @@ export async function GET() {
       });
     }
 
-    // Cache hit: stale — return stale data but revalidate in background
-    if (cachedData && age < STALE_TTL_MS) {
-      triggerRevalidation();
-      return NextResponse.json(cachedData, {
+    // Cache STALE — return stale data, revalidate in background
+    if (entry && age < STALE_TTL_MS) {
+      triggerRevalidation(period);
+      return NextResponse.json(entry.data, {
         headers: {
           "Cache-Control": "public, s-maxage=300, stale-while-revalidate=600",
           "X-Cache": "STALE",
@@ -160,10 +148,9 @@ export async function GET() {
       });
     }
 
-    // Cache miss or expired: fetch synchronously
-    const payload = await fetchAndCompute();
-    cachedData = payload;
-    cachedAt = Date.now();
+    // Cache MISS — fetch synchronously
+    const payload = await fetchAndCompute(period);
+    cache.set(period, { data: payload, at: Date.now() });
 
     return NextResponse.json(payload, {
       headers: {
@@ -175,21 +162,16 @@ export async function GET() {
   } catch (error) {
     console.error("[api/metrics] GET error:", error);
     return NextResponse.json(
-      {
-        error: "Falha ao computar métricas",
-        details: error instanceof Error ? error.message : String(error),
-      },
+      { error: "Falha ao computar métricas", details: error instanceof Error ? error.message : String(error) },
       { status: 500 }
     );
   }
 }
 
-// ─── POST: invalidate cache (called after sync) ────────────────────────────
+// ─── POST: invalidate all period caches ─────────────────────────────────────
 
 export async function POST() {
-  cachedData = null;
-  cachedAt = 0;
-  console.log("[api/metrics] Cache invalidated via POST");
-
+  cache.clear();
+  revalidatingSet.clear();
   return NextResponse.json({ ok: true, message: "Cache invalidado" });
 }

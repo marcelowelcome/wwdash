@@ -4,6 +4,20 @@ import { type WonDeal, type MonthlyTarget } from "./schemas";
 // ─── CONFIG ────────────────────────────────────────────────────────────────────
 export const SDR_GROUP_ID = "1";
 export const CLOSER_GROUP_ID = "3";
+
+// Global period filter — controls the data window for all deal fetches
+export type GlobalPeriod = 30 | 90 | 180 | 365 | 0;
+export const DEFAULT_GLOBAL_PERIOD: GlobalPeriod = 180;
+export const PERIOD_OPTIONS: { value: GlobalPeriod; label: string }[] = [
+    { value: 30, label: "30 dias" },
+    { value: 90, label: "90 dias" },
+    { value: 180, label: "180 dias" },
+    { value: 365, label: "1 ano" },
+    { value: 0, label: "Tudo" },
+];
+export function periodToDaysBack(period: GlobalPeriod): number {
+    return period === 0 ? 3650 : period;
+}
 export const TRAINING_MOTIVE = "Para closer ter mais reuniões";
 
 // Fallback: map group_id → pipeline name for deals missing group_id
