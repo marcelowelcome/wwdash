@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
-import { fetchAllDealsFromDb, fetchFieldMetaFromDb, fetchStagesFromDb, fetchWonDealsFromDb, CLOSER_GROUP_ID, type GlobalPeriod, DEFAULT_GLOBAL_PERIOD, PERIOD_OPTIONS, periodToDaysBack } from "@/lib/supabase-api";
+import { fetchAllDealsFromDb, fetchFieldMetaFromDb, fetchStagesFromDb, fetchWonDealsFromDb, CLOSER_GROUP_ID } from "@/lib/supabase-api";
 import { supabase } from "@/lib/supabase";
 import { computeMetrics, type Metrics } from "@/lib/metrics";
 import { T, statusColor } from "./dashboard/theme";
@@ -16,7 +16,6 @@ import { FunnelMetaTab } from "./dashboard/FunnelMetaTab";
 import { ChatTab } from "./dashboard/ChatTab";
 import { ChatPopup } from "./dashboard/ChatPopup";
 import { ChangelogModal } from "./dashboard/ChangelogModal";
-import { TabErrorBoundary } from "./dashboard/ErrorBoundary";
 import { CURRENT_VERSION } from "@/lib/versions";
 import { type WonDeal } from "@/lib/schemas";
 import { useChat } from "@/lib/use-chat";
@@ -70,8 +69,6 @@ interface HeaderProps {
     syncing: boolean;
     syncResult: { synced?: number; error?: string } | null;
     lastSyncLog: SyncLog | null;
-    globalPeriod: GlobalPeriod;
-    onPeriodChange: (p: GlobalPeriod) => void;
 }
 
 function formatSyncAge(iso: string): string {
@@ -84,7 +81,7 @@ function formatSyncAge(iso: string): string {
     return `${Math.floor(h / 24)}d atrás`;
 }
 
-function Header({ tab, setTab, metrics, loading, lastUpdate, onRefresh, onVersionClick, onSync, syncing, syncResult, lastSyncLog, globalPeriod, onPeriodChange }: HeaderProps) {
+function Header({ tab, setTab, metrics, loading, lastUpdate, onRefresh, onVersionClick, onSync, syncing, syncResult, lastSyncLog }: HeaderProps) {
     return (
         <div style={{ background: T.surface, borderBottom: `1px solid ${T.border}`, padding: "0 28px" }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", maxWidth: 1200, margin: "0 auto", padding: "16px 0" }}>
@@ -137,17 +134,11 @@ function Header({ tab, setTab, metrics, loading, lastUpdate, onRefresh, onVersio
                             {syncResult.error ? `Erro: ${syncResult.error}` : `${syncResult.synced} deals sincronizados`}
                         </span>
                     )}
-                    {!syncResult && lastSyncLog && (() => {
-                        const ageMin = Math.floor((Date.now() - new Date(lastSyncLog.finished_at).getTime()) / 60000);
-                        const hasErrors = lastSyncLog.errors && lastSyncLog.errors.length > 0;
-                        const healthColor = hasErrors ? "#f66" : ageMin > 240 ? "#f66" : ageMin > 150 ? "#fa0" : "#4aea8b";
-                        const healthDot = hasErrors ? "🔴" : ageMin > 240 ? "🔴" : ageMin > 150 ? "🟡" : "🟢";
-                        return (
-                            <span style={{ fontSize: 10, color: healthColor }} title={`Último sync: ${new Date(lastSyncLog.finished_at).toLocaleString("pt-BR")} · ${lastSyncLog.synced} deals · ${lastSyncLog.trigger_source}${hasErrors ? ` · ${lastSyncLog.errors!.length} erros` : ""}`}>
-                                {healthDot} Sync: {formatSyncAge(lastSyncLog.finished_at)} · {lastSyncLog.synced} deals
-                            </span>
-                        );
-                    })()}
+                    {!syncResult && lastSyncLog && (
+                        <span style={{ fontSize: 10, color: T.muted }} title={`Último sync: ${new Date(lastSyncLog.finished_at).toLocaleString("pt-BR")} · ${lastSyncLog.synced} deals · ${lastSyncLog.trigger_source}${lastSyncLog.errors ? ` · ${lastSyncLog.errors.length} erros` : ""}`}>
+                            Sync: {formatSyncAge(lastSyncLog.finished_at)} · {lastSyncLog.synced} deals ({lastSyncLog.trigger_source})
+                        </span>
+                    )}
                     <button
                         id="btn-refresh"
                         onClick={onRefresh}
@@ -159,7 +150,7 @@ function Header({ tab, setTab, metrics, loading, lastUpdate, onRefresh, onVersio
                     {lastUpdate && <span style={{ fontSize: 10, color: T.muted }}>Atualizado {lastUpdate}</span>}
                 </div>
             </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 2, maxWidth: 1200, margin: "0 auto" }}>
+            <div style={{ display: "flex", gap: 2, maxWidth: 1200, margin: "0 auto" }}>
                 {TABS.map((t) => (
                     <button
                         key={t.id}
@@ -170,35 +161,10 @@ function Header({ tab, setTab, metrics, loading, lastUpdate, onRefresh, onVersio
                         {t.label}
                     </button>
                 ))}
-                <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 4, padding: "0 4px" }}>
-                    <span style={{ fontSize: 9, color: T.border, marginRight: 2 }}>Janela:</span>
-                    {PERIOD_OPTIONS.map(opt => (
-                        <button
-                            key={opt.value}
-                            onClick={() => onPeriodChange(opt.value)}
-                            style={{
-                                background: globalPeriod === opt.value ? `${T.gold}20` : "transparent",
-                                color: globalPeriod === opt.value ? T.gold : T.border,
-                                border: globalPeriod === opt.value ? `1px solid ${T.gold}55` : "1px solid transparent",
-                                borderRadius: 4,
-                                padding: "2px 8px",
-                                fontSize: 9,
-                                fontWeight: 600,
-                                cursor: "pointer",
-                                fontFamily: "inherit",
-                            }}
-                        >
-                            {opt.label}
-                        </button>
-                    ))}
-                </div>
             </div>
         </div>
     );
 }
-
-// ─── SERVER METRICS ─────────────────────────────────────────────────────────
-const useServerMetrics = false; // TEMP: disabled to debug client-side error
 
 // ─── MAIN DASHBOARD ───────────────────────────────────────────────────────────
 export default function Dashboard() {
@@ -206,7 +172,7 @@ export default function Dashboard() {
     const [loading, setLoading] = useState(true);
     const [loadStep, setLoadStep] = useState("Conectando ao banco de dados…");
     const [error, setError] = useState<{ type: string; msg: string } | null>(null);
-    const [metrics, setMetrics] = useState<Metrics | null>(null);
+    const [metrics, setMetrics] = useState<any | null>(null);
     const [sdrDeals, setSdrDeals] = useState<WonDeal[]>([]);
     const [wonDeals, setWonDeals] = useState<WonDeal[]>([]);
     const [closerDeals, setCloserDeals] = useState<WonDeal[]>([]);
@@ -219,115 +185,36 @@ export default function Dashboard() {
     const [lastSyncLog, setLastSyncLog] = useState<SyncLog | null>(null);
     const chat = useChat();
 
-    // Global period filter (persisted in localStorage)
-    const [globalPeriod, setGlobalPeriod] = useState<GlobalPeriod>(() => {
-        if (typeof window === "undefined") return DEFAULT_GLOBAL_PERIOD;
-        const stored = localStorage.getItem("ww-global-period");
-        if (stored) {
-            const val = parseInt(stored, 10);
-            if ([30, 90, 180, 365, 0].includes(val)) return val as GlobalPeriod;
-        }
-        return DEFAULT_GLOBAL_PERIOD;
-    });
-    const handlePeriodChange = useCallback((p: GlobalPeriod) => {
-        setGlobalPeriod(p);
-        localStorage.setItem("ww-global-period", String(p));
-    }, []);
-
-    // Fetch pre-computed metrics from server API (cached, stale-while-revalidate)
-    const loadFromServer = useCallback(async (): Promise<boolean> => {
-        try {
-            setLoadStep("Carregando métricas do servidor…");
-            const resp = await fetch(`/api/metrics?period=${globalPeriod}`);
-            if (!resp.ok) return false;
-            const data = await resp.json();
-            if (!data.metrics) return false;
-
-            setAcFieldMap(data.fieldMap);
-            setAcStageMap(data.stageMap);
-            setSdrDeals(data.sdrDeals);
-            setCloserDeals(data.closerDeals);
-            setWonDeals(data.wonDeals);
-            setMetrics(data.metrics);
-            setLastSyncLog(data.lastSyncLog);
-            setLastUpdate(new Date().toLocaleTimeString("pt-BR"));
-            return true;
-        } catch (e) {
-            console.warn("[Dashboard] Server metrics unavailable, falling back to direct queries:", e);
-            return false;
-        }
-    }, [globalPeriod]);
-
-    // Direct Supabase queries (fallback when server metrics unavailable)
-    const loadFromSupabase = useCallback(async () => {
-        setLoadStep("Carregando dados…");
-        const daysBack = periodToDaysBack(globalPeriod);
-
-        // Fetch all data sources in parallel — use allSettled so partial failures
-        // don't discard all data (e.g. sync_logs failing shouldn't block the dashboard)
-        const results = await Promise.allSettled([
-            fetchFieldMetaFromDb(),                             // 0
-            fetchStagesFromDb(),                                // 1
-            fetchAllDealsFromDb("1", daysBack),                 // 2 SDR P1
-            fetchAllDealsFromDb("3", daysBack),                 // 3 SDR P3
-            fetchAllDealsFromDb(CLOSER_GROUP_ID, daysBack),     // 4 Closer
-            fetchWonDealsFromDb(CLOSER_GROUP_ID),               // 5 Won (always all time)
-            supabase.from("sync_logs").select("*").order("id", { ascending: false }).limit(1), // 6
-        ]);
-
-        const get = <T,>(idx: number, fallback: T): T =>
-            results[idx].status === "fulfilled" ? (results[idx] as PromiseFulfilledResult<T>).value : fallback;
-
-        // Critical sources — if these fail, we can't render
-        const fieldMap = get<Record<string, string>>(0, {});
-        const stageMap = get<Record<string, string>>(1, {});
-        const sdrP1 = get<WonDeal[]>(2, []);
-        const sdrP3 = get<WonDeal[]>(3, []);
-        const closerData = get<WonDeal[]>(4, []);
-        const wonData = get<WonDeal[]>(5, []);
-
-        // If all deal fetches returned empty AND at least one failed, it's a real error
-        const dealsFailed = [2, 3, 4, 5].filter(i => results[i].status === "rejected");
-        if (dealsFailed.length === 4) {
-            const firstErr = (results[2] as PromiseRejectedResult).reason;
-            throw new Error(`Falha ao buscar deals: ${firstErr}`);
-        }
-
-        setAcFieldMap(fieldMap);
-        setAcStageMap(stageMap);
-        const combinedSdr = [...sdrP1, ...sdrP3];
-        setSdrDeals(combinedSdr);
-        setCloserDeals(closerData);
-        setWonDeals(wonData);
-
-        setLoadStep("Calculando métricas…");
-        setMetrics(computeMetrics(sdrP1, closerData, wonData, fieldMap, stageMap));
-
-        // Non-critical: sync logs (OK to fail silently)
-        const syncLogResult = get<{ data: SyncLog[] | null }>(6, { data: null });
-        if (syncLogResult.data && syncLogResult.data.length > 0) setLastSyncLog(syncLogResult.data[0]);
-
-        // Log partial failures for debugging
-        const failures = results
-            .map((r, i) => r.status === "rejected" ? i : null)
-            .filter(i => i !== null);
-        if (failures.length > 0) {
-            console.warn(`[Dashboard] Partial load failures at indices: ${failures.join(", ")}`);
-        }
-
-        setLastUpdate(new Date().toLocaleTimeString("pt-BR"));
-    }, [globalPeriod]);
-
     const loadData = useCallback(async () => {
         setLoading(true);
         setError(null);
         try {
-            // Try server-side cached metrics first, fall back to direct Supabase
-            if (useServerMetrics) {
-                const ok = await loadFromServer();
-                if (ok) return;
-            }
-            await loadFromSupabase();
+            setLoadStep("Carregando dados…");
+
+            // Fetch all data sources in parallel
+            const [fieldMap, stageMap, sdrP1, sdrP3, closerData, wonData, syncLogs] = await Promise.all([
+                fetchFieldMetaFromDb(),
+                fetchStagesFromDb(),
+                fetchAllDealsFromDb("1", 180),
+                fetchAllDealsFromDb("3", 180),
+                fetchAllDealsFromDb(CLOSER_GROUP_ID, 365),
+                fetchWonDealsFromDb(CLOSER_GROUP_ID),
+                supabase.from("sync_logs").select("*").order("id", { ascending: false }).limit(1),
+            ]);
+
+            setAcFieldMap(fieldMap);
+            setAcStageMap(stageMap);
+            const combinedSdr = [...sdrP1, ...sdrP3];
+            setSdrDeals(combinedSdr);
+            setCloserDeals(closerData);
+            setWonDeals(wonData);
+
+            setLoadStep("Calculando métricas…");
+            setMetrics(computeMetrics(sdrP1, closerData, wonData, fieldMap, stageMap));
+
+            if (syncLogs.data && syncLogs.data.length > 0) setLastSyncLog(syncLogs.data[0] as SyncLog);
+
+            setLastUpdate(new Date().toLocaleTimeString("pt-BR"));
         } catch (e) {
             const msg = e instanceof Error ? e.message : String(e);
             console.error("[Dashboard] loadData error:", msg);
@@ -338,7 +225,7 @@ export default function Dashboard() {
         } finally {
             setLoading(false);
         }
-    }, [loadFromServer, loadFromSupabase]);
+    }, []);
 
     const handleSync = useCallback(async () => {
         setSyncing(true);
@@ -350,8 +237,6 @@ export default function Dashboard() {
                 setSyncResult({ error: data.error || `HTTP ${resp.status}` });
             } else {
                 setSyncResult({ synced: data.synced ?? 0 });
-                // Invalidate server metrics cache after sync
-                fetch("/api/metrics", { method: "POST" }).catch(() => {});
                 // Auto-refresh dashboard data after sync
                 loadData();
             }
@@ -382,8 +267,6 @@ export default function Dashboard() {
         syncing,
         syncResult,
         lastSyncLog,
-        globalPeriod,
-        onPeriodChange: handlePeriodChange,
     };
 
     if (loading) {
@@ -439,7 +322,6 @@ export default function Dashboard() {
         <div style={{ background: T.bg, minHeight: "100vh", color: T.white, fontFamily: "'Trebuchet MS', 'Lucida Grande', sans-serif" }}>
             <Header {...headerProps} />
             <div style={{ maxWidth: 1200, margin: "0 auto", padding: "24px 28px 48px" }}>
-                <TabErrorBoundary key={tab} tabLabel={TABS.find(t => t.id === tab)?.label}>
                 {tab === "overview" && <OverviewTab sdrDeals={sdrDeals} closerDeals={closerDeals} wonDeals={wonDeals} fieldMap={acFieldMap} stageMap={acStageMap} allDeals={allDeals} />}
                 {tab === "sdr" && <SDRTab deals={sdrDeals} fieldMap={acFieldMap} />}
                 {tab === "funnel" && <FunnelTab m={metrics} />}
@@ -459,7 +341,6 @@ export default function Dashboard() {
                         context={chatContext}
                     />
                 )}
-                </TabErrorBoundary>
             </div>
             {tab !== "chat" && (
                 <ChatPopup

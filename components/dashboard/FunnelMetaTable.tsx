@@ -4,19 +4,7 @@ import { useState, useMemo } from "react";
 import { T } from "./theme";
 import { DealsModal } from "./DealsModal";
 import { type WonDeal, type FunnelMetrics, type MonthlyTarget } from "@/lib/schemas";
-import {
-    formatPercent,
-    formatCurrency,
-    calcAchievement,
-    calcShouldBe,
-    calcFunnelCVR,
-    isInMonth,
-    isCreatedInMonth,
-    isElopement,
-    isInWwPipeline,
-    isInWwLeadsPipeline,
-    isInWwMqlPipeline,
-} from "@/lib/funnel-utils";
+import { formatPercent, formatCurrency, calcAchievement, calcShouldBe, calcFunnelCVR, isInMonth, isCreatedInMonth } from "@/lib/funnel-utils";
 
 type ViewMode = "wedding" | "elopement" | "total";
 
@@ -33,7 +21,37 @@ interface FunnelMetaTableProps {
 
 const FUNNEL_COLUMNS = ["Leads", "MQL", "Agendamento", "Reunioes", "Qualificado", "Closer Agendada", "Closer Realizada", "Vendas"];
 
+// Wedding Pipeline IDs and names
+const WW_PIPELINE_IDS = [1, 3, 4, 17, 31];
+const WW_LEADS_PIPELINE_IDS = [1, 3, 4, 12, 17, 31]; // Includes Elopement (12) for Leads only
+const WW_MQL_PIPELINE_IDS = [1, 3, 4];
+const WW_PIPELINE_NAMES = ["SDR Weddings", "Closer Weddings", "Planejamento Weddings", "WW - Internacional", "Outros Desqualificados | Wedding"];
+const WW_LEADS_PIPELINE_NAMES = ["SDR Weddings", "Closer Weddings", "Planejamento Weddings", "WW - Internacional", "Outros Desqualificados | Wedding", "Elopment Wedding"];
+const WW_MQL_PIPELINE_NAMES = ["SDR Weddings", "Closer Weddings", "Planejamento Weddings"];
+
 type StageKey = "leads" | "mql" | "agendamento" | "reunioes" | "qualificado" | "closerAgendada" | "closerRealizada" | "vendas";
+
+function isElopement(d: WonDeal): boolean {
+    return d.is_elopement === true || d.title?.startsWith("EW") === true || d.pipeline === "Elopment Wedding";
+}
+
+function isInWwPipeline(d: WonDeal): boolean {
+    if (d.pipeline_id && WW_PIPELINE_IDS.includes(d.pipeline_id)) return true;
+    if (d.pipeline && WW_PIPELINE_NAMES.includes(d.pipeline)) return true;
+    return false;
+}
+
+function isInWwLeadsPipeline(d: WonDeal): boolean {
+    if (d.pipeline_id && WW_LEADS_PIPELINE_IDS.includes(d.pipeline_id)) return true;
+    if (d.pipeline && WW_LEADS_PIPELINE_NAMES.includes(d.pipeline)) return true;
+    return false;
+}
+
+function isInWwMqlPipeline(d: WonDeal): boolean {
+    if (d.pipeline_id && WW_MQL_PIPELINE_IDS.includes(d.pipeline_id)) return true;
+    if (d.pipeline && WW_MQL_PIPELINE_NAMES.includes(d.pipeline)) return true;
+    return false;
+}
 
 export function FunnelMetaTable({ deals, year, month, target, previousMetrics, monthProgress, cpl, viewMode = "wedding" }: FunnelMetaTableProps) {
     const [modalOpen, setModalOpen] = useState(false);

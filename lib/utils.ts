@@ -17,10 +17,10 @@ export const parseDate = (s: string | undefined): Date | null =>
 
 /**
  * Returns the number of days since a given date relative to a reference date.
- * Returns Infinity if the date is null (sorts to "oldest" bucket).
+ * Returns 999 if the date is null (to push it to the "old" bucket).
  */
 export const daysSince = (d: Date | null, ref = new Date()): number =>
-    d ? Math.floor((ref.getTime() - d.getTime()) / 86400000) : Infinity;
+    d ? Math.floor((ref.getTime() - d.getTime()) / 86400000) : 999;
 
 /**
  * Returns a week key (Monday's date string) for a given ISO date string.

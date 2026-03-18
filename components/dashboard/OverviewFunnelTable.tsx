@@ -20,11 +20,28 @@ import {
     calcShouldBe,
     calcConversionRate,
     getMonthName,
-    isElopement,
-    isInWwPipeline,
-    isInWwLeadsPipeline,
-    isInWwMqlPipeline,
 } from "@/lib/funnel-utils";
+
+// Pipeline helpers (same as FunnelMetaTab)
+const WW_PIPELINE_IDS = [1, 3, 4, 17, 31];
+const WW_LEADS_PIPELINE_IDS = [1, 3, 4, 12, 17, 31];
+const WW_MQL_PIPELINE_IDS = [1, 3, 4];
+const WW_PIPELINE_NAMES = ["SDR Weddings", "Closer Weddings", "Planejamento Weddings", "WW - Internacional", "Outros Desqualificados | Wedding"];
+const WW_LEADS_PIPELINE_NAMES = [...WW_PIPELINE_NAMES, "Elopment Wedding"];
+const WW_MQL_PIPELINE_NAMES = ["SDR Weddings", "Closer Weddings", "Planejamento Weddings"];
+
+function isElopement(d: WonDeal): boolean {
+    return d.is_elopement === true || d.title?.startsWith("EW") === true || d.pipeline === "Elopment Wedding";
+}
+function isInWwPipeline(d: WonDeal): boolean {
+    return (d.pipeline_id != null && WW_PIPELINE_IDS.includes(d.pipeline_id)) || (d.pipeline != null && WW_PIPELINE_NAMES.includes(d.pipeline));
+}
+function isInWwLeadsPipeline(d: WonDeal): boolean {
+    return (d.pipeline_id != null && WW_LEADS_PIPELINE_IDS.includes(d.pipeline_id)) || (d.pipeline != null && WW_LEADS_PIPELINE_NAMES.includes(d.pipeline));
+}
+function isInWwMqlPipeline(d: WonDeal): boolean {
+    return (d.pipeline_id != null && WW_MQL_PIPELINE_IDS.includes(d.pipeline_id)) || (d.pipeline != null && WW_MQL_PIPELINE_NAMES.includes(d.pipeline));
+}
 
 type StageKey = "leads" | "mql" | "agendamento" | "reunioes" | "qualificado" | "closerAgendada" | "closerRealizada" | "vendas";
 

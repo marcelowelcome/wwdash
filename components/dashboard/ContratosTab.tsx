@@ -13,7 +13,6 @@ import { T } from "./theme";
 import { type WonDeal } from "@/lib/schemas";
 import { type PeriodFilter } from "@/lib/metrics-sdr";
 import { computeContractMetrics } from "@/lib/metrics-contracts";
-import { exportCSV } from "@/lib/export-csv";
 
 interface ContratosTabProps {
     deals: WonDeal[];
@@ -33,25 +32,7 @@ export function ContratosTab({ deals, fieldMap }: ContratosTabProps) {
     return (
         <div style={{ display: "flex", flexDirection: "column", gap: 28 }}>
 
-            {/* ── Filter + Export ──────────────────────────────────────── */}
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
-                <button
-                    onClick={() => exportCSV("contratos", [
-                        { header: "ID", getValue: (d: WonDeal) => d.id },
-                        { header: "Destino", getValue: (d: WonDeal) => d.destino || "" },
-                        { header: "Convidados", getValue: (d: WonDeal) => d.num_convidados },
-                        { header: "Orçamento", getValue: (d: WonDeal) => d.orcamento },
-                        { header: "Valor Fechado", getValue: (d: WonDeal) => d.valor_fechado_em_contrato },
-                        { header: "Fechamento", getValue: (d: WonDeal) => d.data_fechamento ? new Date(d.data_fechamento).toLocaleDateString("pt-BR") : "" },
-                        { header: "Cidade", getValue: (d: WonDeal) => d.cidade || "" },
-                        { header: "Fonte", getValue: (d: WonDeal) => d.ww_fonte_do_lead || "" },
-                        { header: "Pipeline", getValue: (d: WonDeal) => d.pipeline || "" },
-                    ], deals)}
-                    style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 6, padding: "4px 12px", fontSize: 11, color: T.muted, cursor: "pointer", fontFamily: "inherit", fontWeight: 600 }}
-                >
-                    ↓ CSV
-                </button>
-            </div>
+            {/* ── Filter ─────────────────────────────────────────────── */}
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
                 {(["week", "4weeks", "3months", "full"] as PeriodFilter[]).map(f => (
                     <button
