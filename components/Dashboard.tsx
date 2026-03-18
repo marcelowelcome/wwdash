@@ -198,7 +198,7 @@ function Header({ tab, setTab, metrics, loading, lastUpdate, onRefresh, onVersio
 }
 
 // ─── SERVER METRICS ─────────────────────────────────────────────────────────
-const useServerMetrics = true; // set to false to revert to direct Supabase queries
+const useServerMetrics = false; // TEMP: disabled to debug client-side error
 
 // ─── MAIN DASHBOARD ───────────────────────────────────────────────────────────
 export default function Dashboard() {
