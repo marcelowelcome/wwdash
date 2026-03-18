@@ -7,6 +7,22 @@ export interface VersionEntry {
 
 export const VERSION_HISTORY: VersionEntry[] = [
     {
+        version: "2.5.0",
+        date: "18/03/2026",
+        description: "Filtro de período global, cache server-side, exportação CSV e correções críticas.",
+        changes: [
+            "Seletor de janela de dados no header: 30 dias, 90 dias, 180 dias, 1 ano, Tudo.",
+            "Cache server-side /api/metrics com stale-while-revalidate por período (5min TTL, backoff 30s).",
+            "Dashboard carrega de /api/metrics primeiro, fallback para queries diretas ao Supabase.",
+            "Exportação CSV genérica (lib/export-csv.ts) com botão na aba Contratos.",
+            "31 testes de componentes React (ErrorBoundary, KpiCard, SectionTitle, MonthSelector).",
+            "Fix: DATE_COLS alinhado com campo 87 → data_fechamento.",
+            "Fix: Auth do cron aceita x-vercel-cron header (Vercel cron não envia Bearer).",
+            "Fix: backfill-deals.ts e mapping.json alinhados com campo 87.",
+            "Fix: Slack webhook guard para string vazia + revalidation backoff.",
+        ],
+    },
+    {
         version: "2.4.0",
         date: "18/03/2026",
         description: "Refatoração modular, otimizações de performance, testes automatizados e resiliência.",
