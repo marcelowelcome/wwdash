@@ -173,6 +173,9 @@ function Header({ tab, setTab, metrics, loading, lastUpdate, onRefresh, onVersio
     );
 }
 
+// ─── SERVER METRICS ─────────────────────────────────────────────────────────
+const useServerMetrics = true; // set to false to revert to direct Supabase queries
+
 // ─── MAIN DASHBOARD ───────────────────────────────────────────────────────────
 export default function Dashboard() {
     const [tab, setTab] = useState<TabId>("overview");
@@ -192,65 +195,99 @@ export default function Dashboard() {
     const [lastSyncLog, setLastSyncLog] = useState<SyncLog | null>(null);
     const chat = useChat();
 
+    // Fetch pre-computed metrics from server API (cached, stale-while-revalidate)
+    const loadFromServer = useCallback(async (): Promise<boolean> => {
+        try {
+            setLoadStep("Carregando métricas do servidor…");
+            const resp = await fetch("/api/metrics");
+            if (!resp.ok) return false;
+            const data = await resp.json();
+            if (!data.metrics) return false;
+
+            setAcFieldMap(data.fieldMap);
+            setAcStageMap(data.stageMap);
+            setSdrDeals(data.sdrDeals);
+            setCloserDeals(data.closerDeals);
+            setWonDeals(data.wonDeals);
+            setMetrics(data.metrics);
+            setLastSyncLog(data.lastSyncLog);
+            setLastUpdate(new Date().toLocaleTimeString("pt-BR"));
+            return true;
+        } catch (e) {
+            console.warn("[Dashboard] Server metrics unavailable, falling back to direct queries:", e);
+            return false;
+        }
+    }, []);
+
+    // Direct Supabase queries (fallback when server metrics unavailable)
+    const loadFromSupabase = useCallback(async () => {
+        setLoadStep("Carregando dados…");
+
+        // Fetch all data sources in parallel — use allSettled so partial failures
+        // don't discard all data (e.g. sync_logs failing shouldn't block the dashboard)
+        const results = await Promise.allSettled([
+            fetchFieldMetaFromDb(),                             // 0
+            fetchStagesFromDb(),                                // 1
+            fetchAllDealsFromDb("1", 180),                      // 2 SDR P1
+            fetchAllDealsFromDb("3", 180),                      // 3 SDR P3
+            fetchAllDealsFromDb(CLOSER_GROUP_ID, 365),          // 4 Closer
+            fetchWonDealsFromDb(CLOSER_GROUP_ID),               // 5 Won
+            supabase.from("sync_logs").select("*").order("id", { ascending: false }).limit(1), // 6
+        ]);
+
+        const get = <T,>(idx: number, fallback: T): T =>
+            results[idx].status === "fulfilled" ? (results[idx] as PromiseFulfilledResult<T>).value : fallback;
+
+        // Critical sources — if these fail, we can't render
+        const fieldMap = get<Record<string, string>>(0, {});
+        const stageMap = get<Record<string, string>>(1, {});
+        const sdrP1 = get<WonDeal[]>(2, []);
+        const sdrP3 = get<WonDeal[]>(3, []);
+        const closerData = get<WonDeal[]>(4, []);
+        const wonData = get<WonDeal[]>(5, []);
+
+        // If all deal fetches returned empty AND at least one failed, it's a real error
+        const dealsFailed = [2, 3, 4, 5].filter(i => results[i].status === "rejected");
+        if (dealsFailed.length === 4) {
+            const firstErr = (results[2] as PromiseRejectedResult).reason;
+            throw new Error(`Falha ao buscar deals: ${firstErr}`);
+        }
+
+        setAcFieldMap(fieldMap);
+        setAcStageMap(stageMap);
+        const combinedSdr = [...sdrP1, ...sdrP3];
+        setSdrDeals(combinedSdr);
+        setCloserDeals(closerData);
+        setWonDeals(wonData);
+
+        setLoadStep("Calculando métricas…");
+        setMetrics(computeMetrics(sdrP1, closerData, wonData, fieldMap, stageMap));
+
+        // Non-critical: sync logs (OK to fail silently)
+        const syncLogResult = get<{ data: SyncLog[] | null }>(6, { data: null });
+        if (syncLogResult.data && syncLogResult.data.length > 0) setLastSyncLog(syncLogResult.data[0]);
+
+        // Log partial failures for debugging
+        const failures = results
+            .map((r, i) => r.status === "rejected" ? i : null)
+            .filter(i => i !== null);
+        if (failures.length > 0) {
+            console.warn(`[Dashboard] Partial load failures at indices: ${failures.join(", ")}`);
+        }
+
+        setLastUpdate(new Date().toLocaleTimeString("pt-BR"));
+    }, []);
+
     const loadData = useCallback(async () => {
         setLoading(true);
         setError(null);
         try {
-            setLoadStep("Carregando dados…");
-
-            // Fetch all data sources in parallel — use allSettled so partial failures
-            // don't discard all data (e.g. sync_logs failing shouldn't block the dashboard)
-            const results = await Promise.allSettled([
-                fetchFieldMetaFromDb(),                             // 0
-                fetchStagesFromDb(),                                // 1
-                fetchAllDealsFromDb("1", 180),                      // 2 SDR P1
-                fetchAllDealsFromDb("3", 180),                      // 3 SDR P3
-                fetchAllDealsFromDb(CLOSER_GROUP_ID, 365),          // 4 Closer
-                fetchWonDealsFromDb(CLOSER_GROUP_ID),               // 5 Won
-                supabase.from("sync_logs").select("*").order("id", { ascending: false }).limit(1), // 6
-            ]);
-
-            const get = <T,>(idx: number, fallback: T): T =>
-                results[idx].status === "fulfilled" ? (results[idx] as PromiseFulfilledResult<T>).value : fallback;
-
-            // Critical sources — if these fail, we can't render
-            const fieldMap = get<Record<string, string>>(0, {});
-            const stageMap = get<Record<string, string>>(1, {});
-            const sdrP1 = get<WonDeal[]>(2, []);
-            const sdrP3 = get<WonDeal[]>(3, []);
-            const closerData = get<WonDeal[]>(4, []);
-            const wonData = get<WonDeal[]>(5, []);
-
-            // If all deal fetches returned empty AND at least one failed, it's a real error
-            const dealsFailed = [2, 3, 4, 5].filter(i => results[i].status === "rejected");
-            if (dealsFailed.length === 4) {
-                const firstErr = (results[2] as PromiseRejectedResult).reason;
-                throw new Error(`Falha ao buscar deals: ${firstErr}`);
+            // Try server-side cached metrics first, fall back to direct Supabase
+            if (useServerMetrics) {
+                const ok = await loadFromServer();
+                if (ok) return;
             }
-
-            setAcFieldMap(fieldMap);
-            setAcStageMap(stageMap);
-            const combinedSdr = [...sdrP1, ...sdrP3];
-            setSdrDeals(combinedSdr);
-            setCloserDeals(closerData);
-            setWonDeals(wonData);
-
-            setLoadStep("Calculando métricas…");
-            setMetrics(computeMetrics(sdrP1, closerData, wonData, fieldMap, stageMap));
-
-            // Non-critical: sync logs (OK to fail silently)
-            const syncResult = get<{ data: SyncLog[] | null }>(6, { data: null });
-            if (syncResult.data && syncResult.data.length > 0) setLastSyncLog(syncResult.data[0]);
-
-            // Log partial failures for debugging
-            const failures = results
-                .map((r, i) => r.status === "rejected" ? i : null)
-                .filter(i => i !== null);
-            if (failures.length > 0) {
-                console.warn(`[Dashboard] Partial load failures at indices: ${failures.join(", ")}`);
-            }
-
-            setLastUpdate(new Date().toLocaleTimeString("pt-BR"));
+            await loadFromSupabase();
         } catch (e) {
             const msg = e instanceof Error ? e.message : String(e);
             console.error("[Dashboard] loadData error:", msg);
@@ -261,7 +298,7 @@ export default function Dashboard() {
         } finally {
             setLoading(false);
         }
-    }, []);
+    }, [loadFromServer, loadFromSupabase]);
 
     const handleSync = useCallback(async () => {
         setSyncing(true);
@@ -273,6 +310,8 @@ export default function Dashboard() {
                 setSyncResult({ error: data.error || `HTTP ${resp.status}` });
             } else {
                 setSyncResult({ synced: data.synced ?? 0 });
+                // Invalidate server metrics cache after sync
+                fetch("/api/metrics", { method: "POST" }).catch(() => {});
                 // Auto-refresh dashboard data after sync
                 loadData();
             }
