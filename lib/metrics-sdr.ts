@@ -108,13 +108,14 @@ export interface SDRMetrics {
         dAgend: number | null;  // % change in agendamentos
     };
 
-    // Block 13: Motivos with visual card data
+    // Block 13: Motivos with visual card data + deal references for drill-down
     motivosCards: {
         motivo: string;
         count: number;
         pct: number;        // percentage in current period
         histPct: number;    // historical percentage
         delta: number;      // pct - histPct (in pp)
+        deals: { id: string; title: string | null; cdate: string }[];
     }[];
 }
 
@@ -256,6 +257,7 @@ export function computeSDRMetrics(
     let lostAllEngagedTotal = 0;
     // Period lost deals excluding non-engaged
     const lostPeriodEngagedCounts: Record<string, number> = {};
+    const lostPeriodEngagedDeals: Record<string, { id: string; title: string | null; cdate: string }[]> = {};
     let lostPeriodEngagedTotal = 0;
     let notEngagedCount = 0;
 
@@ -358,6 +360,8 @@ export function computeSDRMetrics(
                 } else {
                     const m = motivo || "Outros";
                     lostPeriodEngagedCounts[m] = (lostPeriodEngagedCounts[m] || 0) + 1;
+                    if (!lostPeriodEngagedDeals[m]) lostPeriodEngagedDeals[m] = [];
+                    lostPeriodEngagedDeals[m].push({ id: d.id, title: (d as any).title || null, cdate: d.cdate });
                     lostPeriodEngagedTotal++;
 
                     // Daily motivo breakdown
@@ -663,7 +667,7 @@ export function computeSDRMetrics(
         .map(([motivo, count]) => {
             const pct = (count / periodTotal) * 100;
             const histPct = ((lostAllEngagedCounts[motivo] || 0) / histTotal) * 100;
-            return { motivo, count, pct, histPct, delta: pct - histPct };
+            return { motivo, count, pct, histPct, delta: pct - histPct, deals: lostPeriodEngagedDeals[motivo] || [] };
         })
         .sort((a, b) => b.count - a.count);
 

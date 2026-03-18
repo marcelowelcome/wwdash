@@ -5,6 +5,19 @@ import { type WonDeal, type MonthlyTarget } from "./schemas";
 export const SDR_GROUP_ID = "1";
 export const CLOSER_GROUP_ID = "3";
 
+// AC owner_id → display name (from AC API /users)
+export const OWNER_NAMES: Record<string, string> = {
+    "1": "Carine Cardoso",
+    "11": "Vanessa Becker",
+    "41": "Jessica G",
+    "52": "Sarah Fischer",
+    "58": "Isabela Ramos",
+};
+export function ownerName(id: string | null | undefined): string {
+    if (!id) return "Sem responsável";
+    return OWNER_NAMES[id] || `#${id}`;
+}
+
 // Global period filter — controls the data window for all deal fetches
 export type GlobalPeriod = 30 | 90 | 180 | 365 | 0;
 export const DEFAULT_GLOBAL_PERIOD: GlobalPeriod = 180;

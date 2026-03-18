@@ -11,6 +11,7 @@ import { CustomTooltip } from "./CustomTooltip";
 import { T } from "./theme";
 import { type SDRMetrics, type PeriodFilter, computeSDRMetrics } from "@/lib/metrics-sdr";
 import { type Deal } from "@/lib/schemas";
+import { ownerName } from "@/lib/supabase-api";
 
 /* ─── Color mapping (prototype C → T) ────────────────────────────────────── */
 const C = {
@@ -155,11 +156,11 @@ function InvestigationPanel({ m }: { m: SDRMetrics }) {
                     {inv.sdrComp.map(sdr => {
                         const statusDot = sdr.delta < -12 ? C.red : sdr.delta < -4 ? C.amber : C.green;
                         return (
-                            <div key={sdr.ownerId} style={{ marginBottom: 12 }}>
+                            <div key={ownerName(sdr.ownerId)} style={{ marginBottom: 12 }}>
                                 <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4, alignItems: "center" }}>
                                     <span style={{ fontSize: 12, color: T.white, display: "flex", alignItems: "center", gap: 5 }}>
                                         <span style={{ width: 8, height: 8, borderRadius: "50%", background: statusDot, display: "inline-block", flexShrink: 0 }} />
-                                        {sdr.ownerId}
+                                        {ownerName(sdr.ownerId)}
                                     </span>
                                     <span style={{ fontSize: 11, ...s.mono, color: sdr.delta < 0 ? C.red : C.green }}>
                                         {sdr.taxaLast.toFixed(0)}%
@@ -238,10 +239,10 @@ function DayDetail({ day, onClose }: {
                 {day.sdrData.map(sdr => {
                     const dotColor = sdr.taxa < 5 ? C.red : sdr.taxa < 15 ? C.amber : C.green;
                     return (
-                        <div key={sdr.ownerId} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "7px 8px", borderRadius: 6, marginBottom: 3 }}>
+                        <div key={ownerName(sdr.ownerId)} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "7px 8px", borderRadius: 6, marginBottom: 3 }}>
                             <span style={{ fontSize: 12, color: T.white, display: "flex", alignItems: "center", gap: 5 }}>
                                 <span style={{ width: 8, height: 8, borderRadius: "50%", background: dotColor, display: "inline-block" }} />
-                                {sdr.ownerId}
+                                {ownerName(sdr.ownerId)}
                             </span>
                             <div style={{ display: "flex", gap: 12, fontSize: 11, ...s.mono }}>
                                 <span style={{ color: T.muted }}>{sdr.mql} MQL</span>
@@ -307,14 +308,17 @@ function DOWHeatmap({ dowPattern }: { dowPattern: SDRMetrics["dowPattern"] }) {
 }
 
 /* ─── Helper: Motivos Cards Full-Width ────────────────────────────────────── */
+const AC_DEAL_URL = "https://welcometrips.activehosted.com/app/deals/";
+
 function MotivosSection({ motivosCards }: { motivosCards: SDRMetrics["motivosCards"] }) {
+    const [expanded, setExpanded] = useState<string | null>(null);
     const totalCount = motivosCards.reduce((sum, m) => sum + m.count, 0);
     return (
         <div style={s.card}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
                 <div>
                     <div style={{ fontSize: 13, fontWeight: 700, color: T.white }}>Motivos de Perda SDR</div>
-                    <div style={{ fontSize: 11, color: T.muted, marginTop: 2 }}>Periodo vs. benchmark historico</div>
+                    <div style={{ fontSize: 11, color: T.muted, marginTop: 2 }}>Periodo vs. benchmark historico · Clique para ver deals</div>
                 </div>
                 <div style={{ fontSize: 11, color: T.muted }}>
                     {totalCount} leads perdidos no periodo
@@ -322,24 +326,55 @@ function MotivosSection({ motivosCards }: { motivosCards: SDRMetrics["motivosCar
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10 }}>
                 {motivosCards.map(mo => (
-                    <div key={mo.motivo} style={{
-                        background: T.surface, borderRadius: 9, padding: "12px 14px",
-                        border: `1px solid ${Math.abs(mo.delta) > 10 ? (mo.delta > 0 ? C.redBright : `${C.green}4D`) : T.border}`,
-                    }}>
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
-                            <span style={{ fontSize: 11, color: T.muted, maxWidth: "75%", lineHeight: 1.4 }}>{mo.motivo}</span>
-                            <span style={{ fontSize: 10, color: mo.delta > 5 ? C.red : mo.delta < -5 ? C.green : T.muted, fontWeight: 700 }}>
-                                {mo.delta > 0 ? "+" : ""}{mo.delta.toFixed(1)}pp
-                            </span>
-                        </div>
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end" }}>
-                            <div>
-                                <div style={{ fontSize: 20, fontWeight: 700, color: T.white, ...s.mono }}>{mo.pct.toFixed(1)}%</div>
-                                <div style={{ fontSize: 10, color: T.muted }}>hist: {mo.histPct.toFixed(1)}%</div>
+                    <div key={mo.motivo}>
+                        <div
+                            onClick={() => setExpanded(expanded === mo.motivo ? null : mo.motivo)}
+                            style={{
+                                background: T.surface, borderRadius: 9, padding: "12px 14px", cursor: "pointer",
+                                border: `1px solid ${expanded === mo.motivo ? T.gold : Math.abs(mo.delta) > 10 ? (mo.delta > 0 ? C.redBright : `${C.green}4D`) : T.border}`,
+                                transition: "border-color 0.15s",
+                            }}
+                        >
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
+                                <span style={{ fontSize: 11, color: T.muted, maxWidth: "75%", lineHeight: 1.4 }}>{mo.motivo}</span>
+                                <span style={{ fontSize: 10, color: mo.delta > 5 ? C.red : mo.delta < -5 ? C.green : T.muted, fontWeight: 700 }}>
+                                    {mo.delta > 0 ? "+" : ""}{mo.delta.toFixed(1)}pp
+                                </span>
                             </div>
-                            <div style={{ fontSize: 13, ...s.mono, color: T.muted }}>{mo.count}</div>
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end" }}>
+                                <div>
+                                    <div style={{ fontSize: 20, fontWeight: 700, color: T.white, ...s.mono }}>{mo.pct.toFixed(1)}%</div>
+                                    <div style={{ fontSize: 10, color: T.muted }}>hist: {mo.histPct.toFixed(1)}%</div>
+                                </div>
+                                <div style={{ fontSize: 13, ...s.mono, color: T.muted }}>{mo.count}</div>
+                            </div>
+                            <MiniBar pct={mo.pct * 1.2} color={mo.delta > 10 ? C.red : mo.delta > 3 ? C.amber : C.blue} />
                         </div>
-                        <MiniBar pct={mo.pct * 1.2} color={mo.delta > 10 ? C.red : mo.delta > 3 ? C.amber : C.blue} />
+                        {expanded === mo.motivo && mo.deals.length > 0 && (
+                            <div style={{ background: T.bg, border: `1px solid ${T.border}`, borderTop: "none", borderRadius: "0 0 9px 9px", padding: "8px 10px", maxHeight: 200, overflow: "auto" }}>
+                                <div style={{ fontSize: 9, color: T.muted, textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 6 }}>
+                                    {mo.deals.length} deals · {mo.motivo}
+                                </div>
+                                {mo.deals.map(deal => (
+                                    <div key={deal.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "4px 0", borderBottom: `1px solid ${T.border}33` }}>
+                                        <div style={{ fontSize: 11, color: T.white }}>
+                                            {deal.title || `Deal #${deal.id}`}
+                                            <span style={{ fontSize: 9, color: T.muted, marginLeft: 6 }}>
+                                                {new Date(deal.cdate).toLocaleDateString("pt-BR")}
+                                            </span>
+                                        </div>
+                                        <a
+                                            href={`${AC_DEAL_URL}${deal.id}`}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            style={{ fontSize: 10, color: T.gold, textDecoration: "none", fontWeight: 700, padding: "2px 6px", border: `1px solid ${T.gold}44`, borderRadius: 4 }}
+                                        >
+                                            AC ↗
+                                        </a>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
                     </div>
                 ))}
             </div>
