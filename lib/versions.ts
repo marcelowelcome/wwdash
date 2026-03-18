@@ -7,6 +7,31 @@ export interface VersionEntry {
 
 export const VERSION_HISTORY: VersionEntry[] = [
     {
+        version: "2.4.0",
+        date: "18/03/2026",
+        description: "Refatoração modular, otimizações de performance, testes automatizados e resiliência.",
+        changes: [
+            "PerfilScoreTab dividido em 7 sub-componentes React.memo (de 1864 para 323 linhas no orchestrator).",
+            "metrics.ts: single-pass pré-classificação de closer deals — O(n) vs antigo O(6n).",
+            "metrics-sdr.ts: weekMap/monthMap single-pass — O(n) vs antigo O(24n).",
+            "lead-score.ts: 6 funções convertidas para single-pass (buildCloserMonthlyProfiles ~20x menos iterações).",
+            "Pipeline helpers centralizados em funnel-utils.ts com Sets O(1) — eliminada duplicação 3x.",
+            "ac-field-map.ts como fonte única de CONV_MAP/ORC_MAP/DESTINO_NORM (webhook importa de lá).",
+            "Campo 87 alinhado para data_fechamento em todos os caminhos de ingestão.",
+            "Promise.allSettled no Dashboard — falhas parciais exibem dados disponíveis.",
+            "Error Boundaries por aba — crash isolado com fallback visual e retry.",
+            "Widget de saúde do sync no header (🟢🟡🔴 baseado em idade e erros).",
+            "Slack webhook na Edge Function sync-deals para alertas de falha.",
+            "Trigger PostgreSQL deals_upsert_newer_only — resolve race condition webhook vs cron.",
+            "192 testes automatizados (Vitest): 120 kpi-weddings + 72 dash-webhook.",
+            "/api/sync protegido com SYNC_SECRET; CRON_SECRET obrigatório no deals/sync.",
+            "Fetchers com maxPages=20 (safety limit) e erros propagados (não silenciados).",
+            "Edge Function sync-deals: field lookup via Map O(1) (era O(n²)).",
+            "deals-cleanup: single API call com ?include=dealCustomFieldData (era N+1).",
+            "Ads spend: single query .or() em vez de 2 queries separadas.",
+        ],
+    },
+    {
         version: "2.3.0",
         date: "17/03/2026",
         description: "Refactoring estrutural e otimizações de performance.",

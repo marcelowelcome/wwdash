@@ -13,40 +13,18 @@ import {
     type AdsSpendData,
 } from "@/lib/supabase-api";
 import { type WonDeal, type MonthlyTarget, type FunnelMetrics } from "@/lib/schemas";
-import { getMonthProgress, isInMonth, isCreatedInMonth } from "@/lib/funnel-utils";
+import {
+    getMonthProgress,
+    isInMonth,
+    isCreatedInMonth,
+    isElopement,
+    isInWwPipeline,
+    isInWwLeadsPipeline,
+    isInWwMqlPipeline,
+} from "@/lib/funnel-utils";
 
 interface FunnelMetaTabProps {
     allDeals: WonDeal[];
-}
-
-// Pipeline helpers
-const WW_PIPELINE_IDS = [1, 3, 4, 17, 31];
-const WW_LEADS_PIPELINE_IDS = [1, 3, 4, 12, 17, 31]; // Includes Elopement (12) for Leads only
-const WW_MQL_PIPELINE_IDS = [1, 3, 4];
-const WW_PIPELINE_NAMES = ["SDR Weddings", "Closer Weddings", "Planejamento Weddings", "WW - Internacional", "Outros Desqualificados | Wedding"];
-const WW_LEADS_PIPELINE_NAMES = ["SDR Weddings", "Closer Weddings", "Planejamento Weddings", "WW - Internacional", "Outros Desqualificados | Wedding", "Elopment Wedding"];
-const WW_MQL_PIPELINE_NAMES = ["SDR Weddings", "Closer Weddings", "Planejamento Weddings"];
-
-function isElopement(d: WonDeal): boolean {
-    return d.is_elopement === true || d.title?.startsWith("EW") === true || d.pipeline === "Elopment Wedding";
-}
-
-function isInWwPipeline(d: WonDeal): boolean {
-    if (d.pipeline_id && WW_PIPELINE_IDS.includes(d.pipeline_id)) return true;
-    if (d.pipeline && WW_PIPELINE_NAMES.includes(d.pipeline)) return true;
-    return false;
-}
-
-function isInWwLeadsPipeline(d: WonDeal): boolean {
-    if (d.pipeline_id && WW_LEADS_PIPELINE_IDS.includes(d.pipeline_id)) return true;
-    if (d.pipeline && WW_LEADS_PIPELINE_NAMES.includes(d.pipeline)) return true;
-    return false;
-}
-
-function isInWwMqlPipeline(d: WonDeal): boolean {
-    if (d.pipeline_id && WW_MQL_PIPELINE_IDS.includes(d.pipeline_id)) return true;
-    if (d.pipeline && WW_MQL_PIPELINE_NAMES.includes(d.pipeline)) return true;
-    return false;
 }
 
 function calculateMetricsFromDeals(deals: WonDeal[], year: number, month: number, vendasCount?: number): FunnelMetrics {

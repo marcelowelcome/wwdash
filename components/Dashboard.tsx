@@ -16,6 +16,7 @@ import { FunnelMetaTab } from "./dashboard/FunnelMetaTab";
 import { ChatTab } from "./dashboard/ChatTab";
 import { ChatPopup } from "./dashboard/ChatPopup";
 import { ChangelogModal } from "./dashboard/ChangelogModal";
+import { TabErrorBoundary } from "./dashboard/ErrorBoundary";
 import { CURRENT_VERSION } from "@/lib/versions";
 import { type WonDeal } from "@/lib/schemas";
 import { useChat } from "@/lib/use-chat";
@@ -134,11 +135,17 @@ function Header({ tab, setTab, metrics, loading, lastUpdate, onRefresh, onVersio
                             {syncResult.error ? `Erro: ${syncResult.error}` : `${syncResult.synced} deals sincronizados`}
                         </span>
                     )}
-                    {!syncResult && lastSyncLog && (
-                        <span style={{ fontSize: 10, color: T.muted }} title={`Último sync: ${new Date(lastSyncLog.finished_at).toLocaleString("pt-BR")} · ${lastSyncLog.synced} deals · ${lastSyncLog.trigger_source}${lastSyncLog.errors ? ` · ${lastSyncLog.errors.length} erros` : ""}`}>
-                            Sync: {formatSyncAge(lastSyncLog.finished_at)} · {lastSyncLog.synced} deals ({lastSyncLog.trigger_source})
-                        </span>
-                    )}
+                    {!syncResult && lastSyncLog && (() => {
+                        const ageMin = Math.floor((Date.now() - new Date(lastSyncLog.finished_at).getTime()) / 60000);
+                        const hasErrors = lastSyncLog.errors && lastSyncLog.errors.length > 0;
+                        const healthColor = hasErrors ? "#f66" : ageMin > 240 ? "#f66" : ageMin > 150 ? "#fa0" : "#4aea8b";
+                        const healthDot = hasErrors ? "🔴" : ageMin > 240 ? "🔴" : ageMin > 150 ? "🟡" : "🟢";
+                        return (
+                            <span style={{ fontSize: 10, color: healthColor }} title={`Último sync: ${new Date(lastSyncLog.finished_at).toLocaleString("pt-BR")} · ${lastSyncLog.synced} deals · ${lastSyncLog.trigger_source}${hasErrors ? ` · ${lastSyncLog.errors!.length} erros` : ""}`}>
+                                {healthDot} Sync: {formatSyncAge(lastSyncLog.finished_at)} · {lastSyncLog.synced} deals
+                            </span>
+                        );
+                    })()}
                     <button
                         id="btn-refresh"
                         onClick={onRefresh}
@@ -172,7 +179,7 @@ export default function Dashboard() {
     const [loading, setLoading] = useState(true);
     const [loadStep, setLoadStep] = useState("Conectando ao banco de dados…");
     const [error, setError] = useState<{ type: string; msg: string } | null>(null);
-    const [metrics, setMetrics] = useState<any | null>(null);
+    const [metrics, setMetrics] = useState<Metrics | null>(null);
     const [sdrDeals, setSdrDeals] = useState<WonDeal[]>([]);
     const [wonDeals, setWonDeals] = useState<WonDeal[]>([]);
     const [closerDeals, setCloserDeals] = useState<WonDeal[]>([]);
@@ -191,16 +198,35 @@ export default function Dashboard() {
         try {
             setLoadStep("Carregando dados…");
 
-            // Fetch all data sources in parallel
-            const [fieldMap, stageMap, sdrP1, sdrP3, closerData, wonData, syncLogs] = await Promise.all([
-                fetchFieldMetaFromDb(),
-                fetchStagesFromDb(),
-                fetchAllDealsFromDb("1", 180),
-                fetchAllDealsFromDb("3", 180),
-                fetchAllDealsFromDb(CLOSER_GROUP_ID, 365),
-                fetchWonDealsFromDb(CLOSER_GROUP_ID),
-                supabase.from("sync_logs").select("*").order("id", { ascending: false }).limit(1),
+            // Fetch all data sources in parallel — use allSettled so partial failures
+            // don't discard all data (e.g. sync_logs failing shouldn't block the dashboard)
+            const results = await Promise.allSettled([
+                fetchFieldMetaFromDb(),                             // 0
+                fetchStagesFromDb(),                                // 1
+                fetchAllDealsFromDb("1", 180),                      // 2 SDR P1
+                fetchAllDealsFromDb("3", 180),                      // 3 SDR P3
+                fetchAllDealsFromDb(CLOSER_GROUP_ID, 365),          // 4 Closer
+                fetchWonDealsFromDb(CLOSER_GROUP_ID),               // 5 Won
+                supabase.from("sync_logs").select("*").order("id", { ascending: false }).limit(1), // 6
             ]);
+
+            const get = <T,>(idx: number, fallback: T): T =>
+                results[idx].status === "fulfilled" ? (results[idx] as PromiseFulfilledResult<T>).value : fallback;
+
+            // Critical sources — if these fail, we can't render
+            const fieldMap = get<Record<string, string>>(0, {});
+            const stageMap = get<Record<string, string>>(1, {});
+            const sdrP1 = get<WonDeal[]>(2, []);
+            const sdrP3 = get<WonDeal[]>(3, []);
+            const closerData = get<WonDeal[]>(4, []);
+            const wonData = get<WonDeal[]>(5, []);
+
+            // If all deal fetches returned empty AND at least one failed, it's a real error
+            const dealsFailed = [2, 3, 4, 5].filter(i => results[i].status === "rejected");
+            if (dealsFailed.length === 4) {
+                const firstErr = (results[2] as PromiseRejectedResult).reason;
+                throw new Error(`Falha ao buscar deals: ${firstErr}`);
+            }
 
             setAcFieldMap(fieldMap);
             setAcStageMap(stageMap);
@@ -212,7 +238,17 @@ export default function Dashboard() {
             setLoadStep("Calculando métricas…");
             setMetrics(computeMetrics(sdrP1, closerData, wonData, fieldMap, stageMap));
 
-            if (syncLogs.data && syncLogs.data.length > 0) setLastSyncLog(syncLogs.data[0] as SyncLog);
+            // Non-critical: sync logs (OK to fail silently)
+            const syncResult = get<{ data: SyncLog[] | null }>(6, { data: null });
+            if (syncResult.data && syncResult.data.length > 0) setLastSyncLog(syncResult.data[0]);
+
+            // Log partial failures for debugging
+            const failures = results
+                .map((r, i) => r.status === "rejected" ? i : null)
+                .filter(i => i !== null);
+            if (failures.length > 0) {
+                console.warn(`[Dashboard] Partial load failures at indices: ${failures.join(", ")}`);
+            }
 
             setLastUpdate(new Date().toLocaleTimeString("pt-BR"));
         } catch (e) {
@@ -322,6 +358,7 @@ export default function Dashboard() {
         <div style={{ background: T.bg, minHeight: "100vh", color: T.white, fontFamily: "'Trebuchet MS', 'Lucida Grande', sans-serif" }}>
             <Header {...headerProps} />
             <div style={{ maxWidth: 1200, margin: "0 auto", padding: "24px 28px 48px" }}>
+                <TabErrorBoundary key={tab} tabLabel={TABS.find(t => t.id === tab)?.label}>
                 {tab === "overview" && <OverviewTab sdrDeals={sdrDeals} closerDeals={closerDeals} wonDeals={wonDeals} fieldMap={acFieldMap} stageMap={acStageMap} allDeals={allDeals} />}
                 {tab === "sdr" && <SDRTab deals={sdrDeals} fieldMap={acFieldMap} />}
                 {tab === "funnel" && <FunnelTab m={metrics} />}
@@ -341,6 +378,7 @@ export default function Dashboard() {
                         context={chatContext}
                     />
                 )}
+                </TabErrorBoundary>
             </div>
             {tab !== "chat" && (
                 <ChatPopup

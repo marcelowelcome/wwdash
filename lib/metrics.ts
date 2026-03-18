@@ -7,6 +7,35 @@ import { TRAINING_MOTIVE, buildWeekLabel, CLOSER_GROUP_ID } from "./supabase-api
  * Pure function that derives all dashboard metrics from raw AC deal data.
  * Does not perform any side effects or API calls.
  */
+
+// ── SHARED HELPERS ────────────────────────────────────────────────────────────
+
+/** Classify a deal in the Closer pipeline. Exported for use by other modules. */
+export const getCloserStatus = (d: Deal) => {
+    if (d.data_fechamento) return "0"; // Won
+    if (d.status === "2") return "2";  // Lost
+    return "1";                         // Open
+};
+
+/** Count SDR deals lost due to taxa/orçamento reasons. */
+function countTaxaLost(
+    decidedDeals: Deal[],
+    FD: string | undefined,
+    FTAX_PAID: string | undefined,
+): number {
+    let count = 0;
+    decidedDeals.forEach(d => {
+        if (d.status === "2") {
+            const m = (FD ? d._cf[FD] : "").trim().toLowerCase();
+            const taxPaid = FTAX_PAID ? d._cf[FTAX_PAID] : "";
+            if (m.includes("taxa") || m.includes("orçamento") || taxPaid.toLowerCase() === "não") {
+                count++;
+            }
+        }
+    });
+    return count;
+}
+
 export function computeMetrics(
     rawSdrDeals: Deal[],
     rawCloserDeals: Deal[],
@@ -17,7 +46,7 @@ export function computeMetrics(
     // ── STRICT PIPELINE ISOLATION ──
     const sdrDeals = rawSdrDeals.filter(d => d.group_id === "1");
 
-    // Closer performance universe: 
+    // Closer performance universe:
     // We combine current Group 3 deals with all Won deals (even if moved to Group 4)
     // to ensure conversion and velocity accurately reflect the Closer's results.
     // Also filter out training deals globally.
@@ -112,21 +141,7 @@ export function computeMetrics(
     const sdrEngagedCount = sdrEngagedDeals.length;
     const sdrDecidedDeals = sdrEngagedDeals.filter(d => d.status !== "1"); // not Open
     const sdrDecidedCount = sdrDecidedDeals.length;
-    let taxaLost = 0;
-    sdrDecidedDeals.forEach(d => {
-        if (d.status === "2") {
-            const m = (FD ? d._cf[FD] : "").trim().toLowerCase();
-            const taxPaid = FTAX_PAID ? d._cf[FTAX_PAID] : "";
-            const taxSent = FTAX_SENT ? d._cf[FTAX_SENT] : "";
-
-            // Refined "Passou da Taxa" logic: literal "Não" in taxPaid or "Sim" in taxSent
-            // but the briefing says "Taxa de Serviço" is a loss reason.
-            // If it's a loss reason, it's a decision.
-            if (m.includes("taxa") || m.includes("orçamento") || taxPaid.toLowerCase() === "não") {
-                taxaLost++;
-            }
-        }
-    });
+    const taxaLost = countTaxaLost(sdrDecidedDeals, FD, FTAX_PAID);
     const sdrPassedTaxa = sdrDecidedCount - taxaLost;
 
     // Qualified -> SQL literal or entered Closer group
@@ -151,16 +166,7 @@ export function computeMetrics(
     const sdrEngagedWCount = sdrEngagedWDeals.length;
     const sdrDecidedWDeals = sdrEngagedWDeals.filter(d => d.status !== "1");
     const sdrDecidedWCount = sdrDecidedWDeals.length;
-    let taxaLostW = 0;
-    sdrDecidedWDeals.forEach(d => {
-        if (d.status === "2") {
-            const m = (FD ? d._cf[FD] : "").trim().toLowerCase();
-            const taxPaid = FTAX_PAID ? d._cf[FTAX_PAID] : "";
-            if (m.includes("taxa") || m.includes("orçamento") || taxPaid.toLowerCase() === "não") {
-                taxaLostW++;
-            }
-        }
-    });
+    const taxaLostW = countTaxaLost(sdrDecidedWDeals, FD, FTAX_PAID);
     const sdrPassedTaxaW = sdrDecidedWCount - taxaLostW;
     const sdrQualifiedW = sdrWeeklyDeals.filter(d => (FSQL ? (d._cf[FSQL] || "").toLowerCase() === "sim" : false)).length || closerDeals.filter(d => inRange(parseDate(d.cdate), lastMonday, lastSunday)).length;
 
@@ -177,14 +183,56 @@ export function computeMetrics(
     };
 
 
-    // ── CLOSER HELPER: Deal Resolution ──────────────────────────────────────────
-    // "Ganho" = data_fechamento preenchido, independente do status no CRM.
-    // Deals com data_fechamento são Won ("0"), sem data_fechamento nunca são Won.
-    const getCloserStatus = (d: Deal) => {
-        if (d.data_fechamento) return "0"; // Won
-        if (d.status === "2") return "2";  // Lost
-        return "1";                         // Open
+    // ── PRE-CLASSIFY CLOSER DEALS IN A SINGLE PASS ───────────────────────────────
+    // Instead of calling getCloserStatus() and getPerformanceDate() repeatedly,
+    // we classify all closer deals once and store the results.
+
+    const getPerformanceDate = (d: Deal) => {
+        if (d.data_fechamento) return parseDate(d.data_fechamento);
+        return parseDate(d.mdate || d.cdate);
     };
+
+    // Single pass: classify every closer deal and compute its performance date
+    interface ClassifiedDeal {
+        deal: Deal;
+        status: string;     // "0" | "1" | "2"
+        perfDate: Date | null;
+        cdate: Date | null;
+    }
+
+    const classified: ClassifiedDeal[] = new Array(closer.length);
+    const closerWon: ClassifiedDeal[] = [];
+    const closerLost: ClassifiedDeal[] = [];
+    const closerOpen: ClassifiedDeal[] = [];
+    let allWonCount = 0;
+    let allDecidedCount = 0;
+
+    for (let i = 0; i < closer.length; i++) {
+        const d = closer[i];
+        const st = getCloserStatus(d);
+        const perfDate = getPerformanceDate(d);
+        const cd = parseDate(d.cdate);
+        const entry: ClassifiedDeal = { deal: d, status: st, perfDate, cdate: cd };
+        classified[i] = entry;
+
+        if (st === "0") {
+            closerWon.push(entry);
+            allWonCount++;
+            allDecidedCount++;
+        } else if (st === "2") {
+            closerLost.push(entry);
+            allDecidedCount++;
+        } else {
+            closerOpen.push(entry);
+        }
+    }
+
+    // Helper: filter pre-classified arrays by performance date range
+    const wonInPeriod = (s: Date, e: Date) =>
+        closerWon.filter(c => c.perfDate && inRange(c.perfDate, s, e)).map(c => c.deal);
+
+    const lostInPeriod = (s: Date, e: Date) =>
+        closerLost.filter(c => c.perfDate && inRange(c.perfDate, s, e)).map(c => c.deal);
 
     // ── CLOSER 4-WEEK ROLLING CONVERSION ───────────────────────────────────────
     const mm4s = daysAgo(28);
@@ -192,30 +240,9 @@ export function computeMetrics(
     const mm4prev_s = daysAgo(56);
     const mm4prev_e = daysAgo(28);
 
-    // Use data_fechamento for won deals, otherwise cdate/mdate
-    const getPerformanceDate = (d: Deal) => {
-        if (d.data_fechamento) return parseDate(d.data_fechamento);
-        return parseDate(d.mdate || d.cdate);
-    };
-
-    const wonInPeriod = (s: Date, e: Date) =>
-        closer.filter((d) => {
-            const date = getPerformanceDate(d);
-            return getCloserStatus(d) === "0" && date && inRange(date, s, e);
-        });
-
-    const lostInPeriod = (s: Date, e: Date) =>
-        closer.filter((d) => {
-            const date = getPerformanceDate(d);
-            return getCloserStatus(d) === "2" && date && inRange(date, s, e);
-        });
-
     const won_curr = wonInPeriod(mm4s, mm4e);
     const lost_curr = lostInPeriod(mm4s, mm4e);
-    const open_curr = closer.filter((d) => {
-        const cd = parseDate(d.cdate);
-        return getCloserStatus(d) === "1" && inRange(cd, mm4s, mm4e);
-    });
+    const open_curr = closerOpen.filter(c => c.cdate && inRange(c.cdate, mm4s, mm4e)).map(c => c.deal);
 
     const conv_curr =
         won_curr.length + lost_curr.length > 0
@@ -233,18 +260,13 @@ export function computeMetrics(
         conv_curr < 20 ? "red" : conv_curr < 25 ? "orange" : "green";
 
     // ── HISTORICAL BENCHMARK ────────────────────────────────────────────────────
-    const allDecided = closer.filter(
-        (d) => getCloserStatus(d) === "0" || getCloserStatus(d) === "2"
-    );
-    const allWon = closer.filter((d) => getCloserStatus(d) === "0");
+    // allWonCount and allDecidedCount already computed in the single pass above
     const histRate =
-        allDecided.length > 0 ? (allWon.length / allDecided.length) * 100 : 0;
+        allDecidedCount > 0 ? (allWonCount / allDecidedCount) * 100 : 0;
 
     // ── VELOCITY ────────────────────────────────────────────────────────────────
-    const enteredMM4 = closer.filter((d) =>
-        inRange(parseDate(d.cdate), mm4s, mm4e)
-    );
-    const decidedMM4 = enteredMM4.filter((d) => getCloserStatus(d) !== "1");
+    const enteredMM4 = classified.filter(c => c.cdate && inRange(c.cdate, mm4s, mm4e));
+    const decidedMM4 = enteredMM4.filter(c => c.status !== "1");
     const velocity =
         enteredMM4.length > 0
             ? (decidedMM4.length / enteredMM4.length) * 100
@@ -292,34 +314,33 @@ export function computeMetrics(
 
     // ── PIPELINE ACTIVE ─────────────────────────────────────────────────────────
     // For the active pipeline snapshot, we only care about deals currently in Group 3
-    const openDeals = closerDeals.filter((d) => getCloserStatus(d) === "1");
+    // Pre-classify closerDeals (not the full `closer` which includes won from other groups)
+    const closerDealsClassified: { deal: Deal; status: string; age: number }[] = [];
+    for (let i = 0; i < closerDeals.length; i++) {
+        const d = closerDeals[i];
+        const st = getCloserStatus(d);
+        const age = daysSince(parseDate(d.cdate));
+        closerDealsClassified.push({ deal: d, status: st, age });
+    }
+
+    const openDealsClassified = closerDealsClassified.filter(c => c.status === "1");
+    const openDeals = openDealsClassified.map(c => c.deal);
+
+    // Single pass: bucket open deals by age
+    let age0_14 = 0, age15_30 = 0, age31_60 = 0, age60plus = 0;
+    for (let i = 0; i < openDealsClassified.length; i++) {
+        const a = openDealsClassified[i].age;
+        if (a <= 14) age0_14++;
+        else if (a <= 30) age15_30++;
+        else if (a <= 60) age31_60++;
+        else age60plus++;
+    }
+
     const pipeByAge = [
-        {
-            label: "0–14 dias",
-            n: openDeals.filter((d) => daysSince(parseDate(d.cdate)) <= 14).length,
-            status: "green" as Status,
-        },
-        {
-            label: "15–30 dias",
-            n: openDeals.filter((d) => {
-                const a = daysSince(parseDate(d.cdate));
-                return a > 14 && a <= 30;
-            }).length,
-            status: "orange" as Status,
-        },
-        {
-            label: "31–60 dias",
-            n: openDeals.filter((d) => {
-                const a = daysSince(parseDate(d.cdate));
-                return a > 30 && a <= 60;
-            }).length,
-            status: "red" as Status,
-        },
-        {
-            label: "60+ dias",
-            n: openDeals.filter((d) => daysSince(parseDate(d.cdate)) > 60).length,
-            status: "red" as Status,
-        },
+        { label: "0–14 dias", n: age0_14, status: "green" as Status },
+        { label: "15–30 dias", n: age15_30, status: "orange" as Status },
+        { label: "31–60 dias", n: age31_60, status: "red" as Status },
+        { label: "60+ dias", n: age60plus, status: "red" as Status },
     ];
 
     const stageCount: Record<string, number> = {};
@@ -332,20 +353,24 @@ export function computeMetrics(
         .map(([stage, n]) => ({ stage, n }));
 
     // ── COHORT ANALYSIS ─────────────────────────────────────────────────────────
-    const cohortCurr = closer.filter((d) =>
-        inRange(parseDate(d.cdate), daysAgo(28), daysAgo(14))
-    );
-    const cohortPrev = closer.filter((d) =>
-        inRange(parseDate(d.cdate), daysAgo(45), daysAgo(28))
-    );
+    const cohortCurrStart = daysAgo(28);
+    const cohortCurrEnd = daysAgo(14);
+    const cohortPrevStart = daysAgo(45);
+    const cohortPrevEnd = daysAgo(28);
 
-    const cohortStats = (cohort: Deal[]) => ({
-        total: cohort.length,
-        won: cohort.filter((d) => getCloserStatus(d) === "0").length,
-        lost: cohort.filter((d) => getCloserStatus(d) === "2").length,
-        open: cohort.filter((d) => getCloserStatus(d) === "1").length,
-        rate: 0,
-    });
+    const cohortCurr = classified.filter(c => c.cdate && inRange(c.cdate, cohortCurrStart, cohortCurrEnd));
+    const cohortPrev = classified.filter(c => c.cdate && inRange(c.cdate, cohortPrevStart, cohortPrevEnd));
+
+    const cohortStats = (cohort: ClassifiedDeal[]) => {
+        let won = 0, lost = 0, open = 0;
+        for (let i = 0; i < cohort.length; i++) {
+            const st = cohort[i].status;
+            if (st === "0") won++;
+            else if (st === "2") lost++;
+            else open++;
+        }
+        return { total: cohort.length, won, lost, open, rate: 0 };
+    };
 
     const coh1 = cohortStats(cohortCurr);
     const coh2 = cohortStats(cohortPrev);
@@ -365,8 +390,7 @@ export function computeMetrics(
     }));
 
     const staleDealsPct =
-        openDeals.filter((d) => daysSince(parseDate(d.cdate)) > 60).length /
-        (openDeals.length || 1);
+        age60plus / (openDeals.length || 1);
 
     // ── ACTIVE ALERTS ───────────────────────────────────────────────────────────
     const activeAlerts: { type: Status; message: string; action?: string }[] = [];
@@ -448,16 +472,17 @@ export function computeMetrics(
         : 0;
 
     // ── CLOSER DEALS BY DESTINATION ─────────────────────────────────────────
+    // Reuse the pre-classified data instead of calling getCloserStatus again
     const destMap: Record<string, { total: number; won: number; lost: number; open: number }> = {};
-    closer.forEach(d => {
-        const dest = (d.destino || "Não informado").trim();
+    for (let i = 0; i < classified.length; i++) {
+        const c = classified[i];
+        const dest = (c.deal.destino || "Não informado").trim();
         if (!destMap[dest]) destMap[dest] = { total: 0, won: 0, lost: 0, open: 0 };
         destMap[dest].total++;
-        const st = getCloserStatus(d);
-        if (st === "0") destMap[dest].won++;
-        else if (st === "2") destMap[dest].lost++;
+        if (c.status === "0") destMap[dest].won++;
+        else if (c.status === "2") destMap[dest].lost++;
         else destMap[dest].open++;
-    });
+    }
     const dealsByDestination = Object.entries(destMap)
         .sort(([, a], [, b]) => b.total - a.total)
         .slice(0, 10)

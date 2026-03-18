@@ -256,8 +256,13 @@ export function buildScoreProfiles(
 
     // Training deals are INCLUDED in profiles — they represent real closures.
     // They are flagged in the UI via isTraining on ScoredDeal.
-    const resolved = closerDeals.filter(d => d.status === "0" || d.status === "2");
-    const won = resolved.filter(d => d.status === "0");
+    // Single pass to partition resolved (won + lost) deals
+    const resolved: WonDeal[] = [];
+    const won: WonDeal[] = [];
+    for (const d of closerDeals) {
+        if (d.status === "0") { resolved.push(d); won.push(d); }
+        else if (d.status === "2") { resolved.push(d); }
+    }
 
     // ── Categorical dimension builder ──────────────────────────────────────
     function buildCatStats(getValue: (d: WonDeal) => string): DimensionStats {
@@ -611,44 +616,54 @@ export function buildMonthlyProfiles(
         .sort(([a], [b]) => a.localeCompare(b))
         .map(([key, deals]) => {
             const dt = new Date(key + "-01");
-            const withValue = deals.filter(d => d.valor_fechado_em_contrato && d.valor_fechado_em_contrato > 0);
-            const receita = withValue.reduce((s, d) => s + (d.valor_fechado_em_contrato ?? 0), 0);
-            const ticketMedio = withValue.length > 0 ? Math.round(receita / withValue.length) : 0;
 
+            // Single pass over deals for all aggregations
+            let receita = 0, valueCount = 0;
+            let guestSum = 0, guestCount = 0;
+            let tempoSum = 0, tempoCount = 0;
+            let elopementCount = 0;
+            let orcSum = 0, orcCount = 0;
             const destMap = new Map<string, number>();
-            for (const d of deals) destMap.set(d.destino || "Não informado", (destMap.get(d.destino || "Não informado") ?? 0) + 1);
-            const topDestinos = topDist(destMap, deals.length, 4);
-
             const fonteMap = new Map<string, number>();
+            const reunMap = new Map<string, number>();
+
             for (const d of deals) {
+                // Receita
+                if (d.valor_fechado_em_contrato && d.valor_fechado_em_contrato > 0) {
+                    receita += d.valor_fechado_em_contrato;
+                    valueCount++;
+                }
+                // Destino
+                const destKey = d.destino || "Não informado";
+                destMap.set(destKey, (destMap.get(destKey) ?? 0) + 1);
+                // Fonte
                 const f = d._cf?.[F_SOURCE_ID] || d.ww_fonte_do_lead || "Não informado";
                 fonteMap.set(f, (fonteMap.get(f) ?? 0) + 1);
+                // Convidados
+                if (d.num_convidados && d.num_convidados > 0) { guestSum += d.num_convidados; guestCount++; }
+                // Tempo de fechamento
+                if (d.data_fechamento && d.cdate) {
+                    const days = daysBetween(d.cdate, d.data_fechamento);
+                    if (days < 1000) { tempoSum += days; tempoCount++; }
+                }
+                // Elopement
+                if (d.is_elopement) elopementCount++;
+                // Reunião
+                if (d.como_foi_feita_a_1a_reuniao) {
+                    reunMap.set(d.como_foi_feita_a_1a_reuniao, (reunMap.get(d.como_foi_feita_a_1a_reuniao) ?? 0) + 1);
+                }
+                // Orçamento
+                if (d.orcamento && d.orcamento > 0) { orcSum += d.orcamento; orcCount++; }
             }
+
+            const ticketMedio = valueCount > 0 ? Math.round(receita / valueCount) : 0;
+            const topDestinos = topDist(destMap, deals.length, 4);
             const topFontes = topDist(fonteMap, deals.length, 4);
-
-            const withGuests = deals.filter(d => d.num_convidados && d.num_convidados > 0);
-            const mediaConvidados = withGuests.length > 0
-                ? Math.round(withGuests.reduce((s, d) => s + (d.num_convidados ?? 0), 0) / withGuests.length)
-                : null;
-
-            const tempos = deals
-                .filter(d => d.data_fechamento && d.cdate)
-                .map(d => daysBetween(d.cdate, d.data_fechamento!))
-                .filter(n => n < 1000);
-            const tempoMedio = tempos.length > 0 ? Math.round(tempos.reduce((a, b) => a + b, 0) / tempos.length) : null;
-
-            const pctElopement = Math.round(deals.filter(d => d.is_elopement).length / deals.length * 100);
-
-            const reunMap = new Map<string, number>();
-            for (const d of deals) {
-                if (d.como_foi_feita_a_1a_reuniao) reunMap.set(d.como_foi_feita_a_1a_reuniao, (reunMap.get(d.como_foi_feita_a_1a_reuniao) ?? 0) + 1);
-            }
+            const mediaConvidados = guestCount > 0 ? Math.round(guestSum / guestCount) : null;
+            const tempoMedio = tempoCount > 0 ? Math.round(tempoSum / tempoCount) : null;
+            const pctElopement = Math.round(elopementCount / deals.length * 100);
             const topReuniao = reunMap.size > 0 ? [...reunMap.entries()].sort(([, a], [, b]) => b - a)[0][0] : null;
-
-            const withOrc = deals.filter(d => d.orcamento && d.orcamento > 0);
-            const avgOrcamento = withOrc.length > 0
-                ? Math.round(withOrc.reduce((s, d) => s + (d.orcamento ?? 0), 0) / withOrc.length)
-                : null;
+            const avgOrcamento = orcCount > 0 ? Math.round(orcSum / orcCount) : null;
 
             return { month: monthLabel(dt), monthKey: key, contratos: deals.length, receita: Math.round(receita), ticketMedio, topDestinos, topFontes, mediaConvidados, tempoMedio, pctElopement, topReuniao, avgOrcamento };
         });
@@ -674,11 +689,17 @@ export function buildSeasonality(wonDeals: WonDeal[]): SeasonalityData[] {
         .sort(([a], [b]) => a.localeCompare(b))
         .map(([key, deals]) => {
             const dt = new Date(key + "-01");
-            const withValue = deals.filter(d => d.valor_fechado_em_contrato && d.valor_fechado_em_contrato > 0);
-            const receita = withValue.reduce((s, d) => s + (d.valor_fechado_em_contrato ?? 0), 0);
-            const ticketMedio = withValue.length > 0 ? Math.round(receita / withValue.length) : 0;
+            let receita = 0, valueCount = 0;
             const destMap = new Map<string, number>();
-            for (const d of deals) destMap.set(d.destino || "Não informado", (destMap.get(d.destino || "Não informado") ?? 0) + 1);
+            for (const d of deals) {
+                if (d.valor_fechado_em_contrato && d.valor_fechado_em_contrato > 0) {
+                    receita += d.valor_fechado_em_contrato;
+                    valueCount++;
+                }
+                const destKey = d.destino || "Não informado";
+                destMap.set(destKey, (destMap.get(destKey) ?? 0) + 1);
+            }
+            const ticketMedio = valueCount > 0 ? Math.round(receita / valueCount) : 0;
             const topDestino = destMap.size > 0 ? [...destMap.entries()].sort(([, a], [, b]) => b - a)[0][0] : null;
             return { month: monthLabel(dt), monthKey: key, contratos: deals.length, receita: Math.round(receita), ticketMedio, topDestino };
         });
@@ -740,88 +761,104 @@ export function buildCloserMonthlyProfiles(
         .map(([key, { deals, byAppointment }]) => {
             const dt = new Date(key + "-01");
             const total = deals.length;
-            const won = deals.filter(d => d.status === "0").length;
-            const lost = deals.filter(d => d.status === "2").length;
-            const open = deals.filter(d => d.status === "1").length;
+
+            // Single pass: count status, boolean rates, accumulate sums, build distribution maps
+            let won = 0, lost = 0, open = 0;
+            let guestSum = 0, guestCount = 0;
+            let orcSum = 0, orcCount = 0;
+            let sqlCount = 0, costumaViajarCount = 0, jaFoiDestCount = 0, temDestinoCount = 0;
+            let taxaEnviadaCount = 0, taxaPagaCount = 0, temDataCasamentoCount = 0;
+            let fezSegundaCount = 0, detalhamentoCount = 0, trainingCount = 0;
+            let completenessSum = 0;
+            let appointmentTrueCount = 0;
+            const destMap = new Map<string, number>();
+            const relMap = new Map<string, number>();
+            const sdrReunMap = new Map<string, number>();
+            const prevMap = new Map<string, number>();
+            const closerReunMap = new Map<string, number>();
+
+            for (let i = 0; i < total; i++) {
+                const d = deals[i];
+
+                // Status counts
+                if (d.status === "0") won++;
+                else if (d.status === "2") lost++;
+                else if (d.status === "1") open++;
+
+                // Appointment flag
+                if (byAppointment[i]) appointmentTrueCount++;
+
+                // Convidados
+                if (d.num_convidados && d.num_convidados > 0) { guestSum += d.num_convidados; guestCount++; }
+
+                // Orçamento
+                if (d.orcamento && d.orcamento > 0) { orcSum += d.orcamento; orcCount++; }
+
+                // Boolean rates
+                if ((d._cf?.[F_SQL_ID] || "") === "Sim") sqlCount++;
+                if (d.costumam_viajar === true) costumaViajarCount++;
+                if (d.ja_foi_destination_wedding === true) jaFoiDestCount++;
+                if (d.ja_tem_destino_definido === true) temDestinoCount++;
+                if (parseFloat(d._cf?.[F_TAX_SENT_ID] || "0") > 0) taxaEnviadaCount++;
+                if (parseFloat(d._cf?.[F_TAX_PAID_ID] || "0") > 0) taxaPagaCount++;
+                if (d.previsao_data_casamento) temDataCasamentoCount++;
+                if (d.fez_segunda_reuniao === true) fezSegundaCount++;
+                if (d.apresentado_orcamento === true) detalhamentoCount++;
+
+                // Training
+                if (isTrainingDeal(d, FQ_ID)) trainingCount++;
+
+                // Distribution maps
+                const destKey = d.destino || "Não informado";
+                destMap.set(destKey, (destMap.get(destKey) ?? 0) + 1);
+                const relKey = d.status_do_relacionamento || "Não informado";
+                relMap.set(relKey, (relMap.get(relKey) ?? 0) + 1);
+                const sdrKey = d.como_foi_feita_a_1a_reuniao || "Não informado";
+                sdrReunMap.set(sdrKey, (sdrReunMap.get(sdrKey) ?? 0) + 1);
+                const prevKey = d.previsao_contratar_assessoria || "Não informado";
+                prevMap.set(prevKey, (prevMap.get(prevKey) ?? 0) + 1);
+                const closerKey = d.tipo_reuniao_closer || "Não informado";
+                closerReunMap.set(closerKey, (closerReunMap.get(closerKey) ?? 0) + 1);
+
+                // Completeness: count filled key fields per deal
+                let filled = 0;
+                if (d._cf?.[F_SQL_ID] || "") filled++;
+                if (d.status_do_relacionamento !== null && d.status_do_relacionamento !== undefined) filled++;
+                if (d.costumam_viajar !== null && d.costumam_viajar !== undefined) filled++;
+                if (d.ja_foi_destination_wedding !== null && d.ja_foi_destination_wedding !== undefined) filled++;
+                if (d.ja_tem_destino_definido !== null && d.ja_tem_destino_definido !== undefined) filled++;
+                if (d.previsao_contratar_assessoria) filled++;
+                if (d.destino) filled++;
+                completenessSum += filled;
+            }
+
             // Majority vote: if more than half used appointment date, mark as such
-            const groupedByAppointment = byAppointment.filter(Boolean).length > total / 2;
+            const groupedByAppointment = appointmentTrueCount > total / 2;
             const resolved = won + lost;
             const convRate = resolved > 0 ? Math.round((won / resolved) * 100) : 0;
 
-            // Destinos
-            const destMap = new Map<string, number>();
-            for (const d of deals) destMap.set(d.destino || "Não informado", (destMap.get(d.destino || "Não informado") ?? 0) + 1);
             const topDestinos = topDist(destMap, total, 5);
+            const mediaConvidados = guestCount > 0 ? Math.round(guestSum / guestCount) : null;
+            const avgOrcamento = orcCount > 0 ? Math.round(orcSum / orcCount) : null;
 
-            // Convidados
-            const withGuests = deals.filter(d => d.num_convidados && d.num_convidados > 0);
-            const mediaConvidados = withGuests.length > 0
-                ? Math.round(withGuests.reduce((s, d) => s + (d.num_convidados ?? 0), 0) / withGuests.length)
-                : null;
+            const sqlRate = pctOf(sqlCount, total);
+            const costumaViajarRate = pctOf(costumaViajarCount, total);
+            const jaFoiDestRate = pctOf(jaFoiDestCount, total);
+            const temDestinoRate = pctOf(temDestinoCount, total);
+            const taxaEnviadaRate = pctOf(taxaEnviadaCount, total);
+            const taxaPagaRate = pctOf(taxaPagaCount, total);
+            const temDataCasamentoRate = pctOf(temDataCasamentoCount, total);
+            const fezSegundaReuniaoRate = pctOf(fezSegundaCount, total);
+            const detalhamentoOrcamentoRate = pctOf(detalhamentoCount, total);
 
-            // Orçamento
-            const withOrc = deals.filter(d => d.orcamento && d.orcamento > 0);
-            const avgOrcamento = withOrc.length > 0
-                ? Math.round(withOrc.reduce((s, d) => s + (d.orcamento ?? 0), 0) / withOrc.length)
-                : null;
-
-            // Boolean rates
-            const sqlRate = pctOf(deals.filter(d => (d._cf?.[F_SQL_ID] || "") === "Sim").length, total);
-            const costumaViajarRate = pctOf(deals.filter(d => d.costumam_viajar === true).length, total);
-            const jaFoiDestRate = pctOf(deals.filter(d => d.ja_foi_destination_wedding === true).length, total);
-            const temDestinoRate = pctOf(deals.filter(d => d.ja_tem_destino_definido === true).length, total);
-            const taxaEnviadaRate = pctOf(deals.filter(d => parseFloat(d._cf?.[F_TAX_SENT_ID] || "0") > 0).length, total);
-            const taxaPagaRate = pctOf(deals.filter(d => parseFloat(d._cf?.[F_TAX_PAID_ID] || "0") > 0).length, total);
-            const temDataCasamentoRate = pctOf(deals.filter(d => !!d.previsao_data_casamento).length, total);
-            const fezSegundaReuniaoRate = pctOf(deals.filter(d => d.fez_segunda_reuniao === true).length, total);
-            const detalhamentoOrcamentoRate = pctOf(deals.filter(d => d.apresentado_orcamento === true).length, total);
-
-            // Status relacionamento
-            const relMap = new Map<string, number>();
-            for (const d of deals) {
-                const v = d.status_do_relacionamento || "Não informado";
-                relMap.set(v, (relMap.get(v) ?? 0) + 1);
-            }
             const topStatusRelacionamento = topDist(relMap, total, 4);
-
-            // Tipo reunião SDR
-            const sdrReunMap = new Map<string, number>();
-            for (const d of deals) {
-                const v = d.como_foi_feita_a_1a_reuniao || "Não informado";
-                sdrReunMap.set(v, (sdrReunMap.get(v) ?? 0) + 1);
-            }
             const topTipoReuniaoSdr = topDist(sdrReunMap, total, 4);
-
-            // Previsão assessoria
-            const prevMap = new Map<string, number>();
-            for (const d of deals) {
-                const v = d.previsao_contratar_assessoria || "Não informado";
-                prevMap.set(v, (prevMap.get(v) ?? 0) + 1);
-            }
             const topPrevisaoAssessoria = topDist(prevMap, total, 4);
-
-            // Tipo reunião closer
-            const closerReunMap = new Map<string, number>();
-            for (const d of deals) {
-                const v = d.tipo_reuniao_closer || "Não informado";
-                closerReunMap.set(v, (closerReunMap.get(v) ?? 0) + 1);
-            }
             const topTipoReuniaoCloser = topDist(closerReunMap, total, 4);
 
-            const trainingCount = deals.filter(d => isTrainingDeal(d, FQ_ID)).length;
-
-            // Completeness: % of key scoring fields that are actually filled
-            const keyChecks: Array<(d: WonDeal) => boolean> = [
-                d => !!(d._cf?.[F_SQL_ID] || ""),
-                d => d.status_do_relacionamento !== null && d.status_do_relacionamento !== undefined,
-                d => d.costumam_viajar !== null && d.costumam_viajar !== undefined,
-                d => d.ja_foi_destination_wedding !== null && d.ja_foi_destination_wedding !== undefined,
-                d => d.ja_tem_destino_definido !== null && d.ja_tem_destino_definido !== undefined,
-                d => !!d.previsao_contratar_assessoria,
-                d => !!d.destino,
-            ];
+            const NUM_KEY_CHECKS = 7;
             const completeness = total > 0
-                ? Math.round(deals.reduce((sum, d) => sum + keyChecks.filter(f => f(d)).length, 0) / (total * keyChecks.length) * 100)
+                ? Math.round(completenessSum / (total * NUM_KEY_CHECKS) * 100)
                 : 0;
 
             return {
@@ -970,7 +1007,11 @@ export interface MonthlyLeadPotential {
 
 export function buildSimpleScoreProfiles(closerDeals: WonDeal[], wonDeals: WonDeal[]): SimpleScoreProfiles {
     // Destino: conversion rate per destination from won + lost in closerDeals (needs both outcomes)
-    const resolved = closerDeals.filter(d => d.status === "0" || d.status === "2");
+    // Single pass to filter resolved deals (avoids extra .filter() allocation)
+    const resolved: WonDeal[] = [];
+    for (const d of closerDeals) {
+        if (d.status === "0" || d.status === "2") resolved.push(d);
+    }
     const byValue: Record<string, ConversionEntry> = {};
     for (const d of resolved) {
         const v = d.destino || "Não informado";
@@ -1135,36 +1176,49 @@ export function buildMonthlyLeadPotential(
         .sort(([a], [b]) => a.localeCompare(b))
         .map(([key, deals]) => {
             const dt = new Date(key + "-01");
-            const scoredDeals = deals.map((d, i) => ({ deal: d, score: scoreSimpleDeal(d, profiles, bands) }));
-            const scored = scoredDeals.map(s => s.score);
-            const wonList = deals.filter(d => !!d.data_fechamento);
-            const won = wonList.length;
-            const lost = deals.filter(d => !d.data_fechamento && d.status === "2").length;
-            const open = deals.filter(d => !d.data_fechamento && d.status !== "2").length;
-            const resolved = won + lost;
-            const convResolved = resolved > 0 ? Math.round(won / resolved * 100) : 0;
-            const convTotal = deals.length > 0 ? Math.round(won / deals.length * 100) : 0;
-            const avgScore = scored.length > 0 ? Math.round(scored.reduce((s, d) => s + d.total, 0) / scored.length) : 0;
 
-            // Conversion by tier
+            // Single pass: score each deal, count status and bands simultaneously
+            let won = 0, lost = 0, open = 0;
+            let scoreSum = 0;
+            const bandCounts = { A: 0, B: 0, C: 0, D: 0 };
             const tierConv: Record<"A" | "B" | "C" | "D", TierConv> = { A: { total: 0, won: 0, conv: 0 }, B: { total: 0, won: 0, conv: 0 }, C: { total: 0, won: 0, conv: 0 }, D: { total: 0, won: 0, conv: 0 } };
-            for (const sd of scoredDeals) {
-                const band = sd.score.band;
-                tierConv[band].total++;
-                if (sd.deal.data_fechamento) tierConv[band].won++;
+            const wonDealIds: string[] = [];
+
+            for (const d of deals) {
+                const sc = scoreSimpleDeal(d, profiles, bands);
+                scoreSum += sc.total;
+                bandCounts[sc.band]++;
+                tierConv[sc.band].total++;
+
+                const isWon = !!d.data_fechamento;
+                if (isWon) {
+                    won++;
+                    wonDealIds.push(d.id);
+                    tierConv[sc.band].won++;
+                } else if (d.status === "2") {
+                    lost++;
+                } else {
+                    open++;
+                }
             }
+
             for (const b of ["A", "B", "C", "D"] as const) {
                 tierConv[b].conv = tierConv[b].total > 0 ? Math.round(tierConv[b].won / tierConv[b].total * 100) : 0;
             }
 
+            const resolved = won + lost;
+            const convResolved = resolved > 0 ? Math.round(won / resolved * 100) : 0;
+            const convTotal = deals.length > 0 ? Math.round(won / deals.length * 100) : 0;
+            const avgScore = deals.length > 0 ? Math.round(scoreSum / deals.length) : 0;
+
             return {
                 monthKey: key, month: monthLabel(dt), total: deals.length,
                 won, lost, open, convResolved, convTotal, avgScore,
-                bandA: scored.filter(d => d.band === "A").length,
-                bandB: scored.filter(d => d.band === "B").length,
-                bandC: scored.filter(d => d.band === "C").length,
-                bandD: scored.filter(d => d.band === "D").length,
-                wonDealIds: wonList.map(d => d.id),
+                bandA: bandCounts.A,
+                bandB: bandCounts.B,
+                bandC: bandCounts.C,
+                bandD: bandCounts.D,
+                wonDealIds,
                 tierConv,
             };
         });
