@@ -358,7 +358,7 @@ export function computeSDRMetrics(
                 if (motivo === nonEngagedMotive) {
                     notEngagedCount++;
                 } else {
-                    const m = motivo || "Outros";
+                    const m = motivo || "Não informado";
                     lostPeriodEngagedCounts[m] = (lostPeriodEngagedCounts[m] || 0) + 1;
                     if (!lostPeriodEngagedDeals[m]) lostPeriodEngagedDeals[m] = [];
                     lostPeriodEngagedDeals[m].push({ id: d.id, title: (d as any).title || null, cdate: d.cdate });
@@ -374,7 +374,7 @@ export function computeSDRMetrics(
         if (isDealLost(d)) {
             const motivo = d._cf[FL_ID];
             if (motivo !== nonEngagedMotive) {
-                const m = motivo || "Outros";
+                const m = motivo || "Não informado";
                 lostAllEngagedCounts[m] = (lostAllEngagedCounts[m] || 0) + 1;
                 lostAllEngagedTotal++;
             }
