@@ -506,9 +506,9 @@ export function SDRTab({ deals, fieldMap }: SDRTabProps) {
             <div style={s.card}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
                     <div>
-                        <SectionTitle>Tendencia Diaria</SectionTitle>
+                        <SectionTitle>Tendencia Diaria — Leads por Data de Entrada</SectionTitle>
                         <div style={{ fontSize: 11, color: T.muted, marginTop: -8 }}>
-                            Clique em qualquer dia para detalhar · Barras avermelhadas = periodo de queda
+                            MQL = leads criados no dia · Taxa = % que agendou reuniao · Clique para detalhar
                         </div>
                     </div>
                     <div style={{ display: "flex", gap: 14, alignItems: "center", fontSize: 11, color: T.muted }}>
