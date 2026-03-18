@@ -61,6 +61,7 @@ export interface SDRMetrics {
         taxaComp: number;
         sdrData: { ownerId: string; mql: number; agendamentos: number; taxa: number }[];
         motivoBreakdown: { motivo: string; count: number }[];
+        deals: { id: string; title: string | null; agendou: boolean; status: string }[];
     }[];
 
     // Block 8: Anomaly detection (dip detection)
@@ -173,10 +174,11 @@ interface DayBucket {
     sdrMql: Record<string, number>;
     sdrAgend: Record<string, number>;
     motivoCounts: Record<string, number>;
+    deals: { id: string; title: string | null; agendou: boolean; status: string }[];
 }
 
 function emptyDayBucket(): DayBucket {
-    return { mql: 0, agendamentos: 0, reunioes: 0, qualificados: 0, sdrMql: {}, sdrAgend: {}, motivoCounts: {} };
+    return { mql: 0, agendamentos: 0, reunioes: 0, qualificados: 0, sdrMql: {}, sdrAgend: {}, motivoCounts: {}, deals: [] };
 }
 
 export function computeSDRMetrics(
@@ -343,6 +345,7 @@ export function computeSDRMetrics(
             if (agendado) bucket.agendamentos++;
             if (reuniao) bucket.reunioes++;
             if (qualificado) bucket.qualificados++;
+            bucket.deals.push({ id: d.id, title: (d as any).title || null, agendou: agendado, status: d.status });
 
             const ownerId = d.owner_id || "unknown";
             bucket.sdrMql[ownerId] = (bucket.sdrMql[ownerId] || 0) + 1;
@@ -518,6 +521,7 @@ export function computeSDRMetrics(
             taxaComp: b.agendamentos > 0 ? (b.reunioes / b.agendamentos) * 100 : 0,
             sdrData,
             motivoBreakdown,
+            deals: b.deals,
         };
     });
 

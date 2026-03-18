@@ -13,6 +13,8 @@ import { type SDRMetrics, type PeriodFilter, computeSDRMetrics } from "@/lib/met
 import { type Deal } from "@/lib/schemas";
 import { ownerName } from "@/lib/supabase-api";
 
+const AC_DEAL_URL = "https://welcometrips.activehosted.com/app/deals/";
+
 /* ─── Color mapping (prototype C → T) ────────────────────────────────────── */
 const C = {
     blue: "#4D94FF",
@@ -266,6 +268,31 @@ function DayDetail({ day, onClose }: {
                     ))}
                 </div>
             )}
+
+            {/* Deals list */}
+            <div style={s.sep}>
+                <div style={{ ...s.label, marginBottom: 8 }}>Leads do dia ({day.deals.length})</div>
+                <div style={{ maxHeight: 220, overflow: "auto" }}>
+                    {day.deals.map(deal => (
+                        <div key={deal.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "5px 0", borderBottom: `1px solid ${T.border}33` }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11 }}>
+                                <span style={{ width: 6, height: 6, borderRadius: "50%", background: deal.agendou ? C.green : deal.status === "2" ? C.red : T.muted, display: "inline-block", flexShrink: 0 }} />
+                                <span style={{ color: T.white }}>{deal.title || `#${deal.id}`}</span>
+                                {deal.agendou && <span style={{ fontSize: 9, color: C.green, fontWeight: 700 }}>AGENDOU</span>}
+                                {deal.status === "2" && !deal.agendou && <span style={{ fontSize: 9, color: C.red, fontWeight: 700 }}>LOST</span>}
+                            </div>
+                            <a
+                                href={`${AC_DEAL_URL}${deal.id}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                style={{ fontSize: 10, color: T.gold, textDecoration: "none", fontWeight: 700, padding: "1px 5px", border: `1px solid ${T.gold}44`, borderRadius: 4, flexShrink: 0 }}
+                            >
+                                AC ↗
+                            </a>
+                        </div>
+                    ))}
+                </div>
+            </div>
         </div>
     );
 }
@@ -308,7 +335,6 @@ function DOWHeatmap({ dowPattern }: { dowPattern: SDRMetrics["dowPattern"] }) {
 }
 
 /* ─── Helper: Motivos Cards Full-Width ────────────────────────────────────── */
-const AC_DEAL_URL = "https://welcometrips.activehosted.com/app/deals/";
 
 function MotivosSection({ motivosCards }: { motivosCards: SDRMetrics["motivosCards"] }) {
     const [expanded, setExpanded] = useState<string | null>(null);
