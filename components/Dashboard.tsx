@@ -344,16 +344,36 @@ export default function Dashboard() {
         setSyncing(true);
         setSyncResult(null);
         try {
-            const resp = await fetch("/api/sync", { method: "POST" });
-            const data = await resp.json();
-            if (!resp.ok) {
-                setSyncResult({ error: data.error || `HTTP ${resp.status}` });
+            // Sync deals + Meta Ads in parallel
+            const now = new Date();
+            const [dealsResp, metaResp] = await Promise.all([
+                fetch("/api/sync", { method: "POST" }),
+                fetch("/api/sync-meta-ads", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        year: now.getFullYear(),
+                        month: now.getMonth() + 1,
+                        pipeline: "wedding",
+                    }),
+                }),
+            ]);
+
+            const dealsData = await dealsResp.json();
+            if (!dealsResp.ok) {
+                setSyncResult({ error: dealsData.error || `HTTP ${dealsResp.status}` });
             } else {
-                setSyncResult({ synced: data.synced ?? 0 });
+                setSyncResult({ synced: dealsData.synced ?? 0 });
                 // Invalidate server metrics cache after sync
                 fetch("/api/metrics", { method: "POST" }).catch(() => {});
                 // Auto-refresh dashboard data after sync
                 loadData();
+            }
+
+            // Log Meta Ads sync result (non-blocking)
+            if (metaResp.ok) {
+                const metaData = await metaResp.json();
+                console.log("[Sync] Meta Ads:", metaData);
             }
         } catch (e) {
             setSyncResult({ error: e instanceof Error ? e.message : "Falha na conexão" });

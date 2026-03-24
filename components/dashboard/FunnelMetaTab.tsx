@@ -91,6 +91,26 @@ export function FunnelMetaTab({ allDeals }: FunnelMetaTabProps) {
         setSelectedMonth(month);
     };
 
+    // Sync Meta Ads for current month if cache is empty
+    const syncMetaAdsIfNeeded = useCallback(async (year: number, month: number, currentAds: { meta: AdsSpendData }) => {
+        const now = new Date();
+        const isCurrentMonth = year === now.getFullYear() && month === now.getMonth() + 1;
+        const hasNoMetaData = currentAds.meta.spend === 0 && currentAds.meta.impressions === 0;
+
+        // Sync if current month or no data
+        if (isCurrentMonth || hasNoMetaData) {
+            try {
+                await fetch("/api/sync-meta-ads", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ year, month, pipeline: "wedding" }),
+                });
+            } catch (e) {
+                console.warn("[FunnelMetaTab] Meta Ads sync failed:", e);
+            }
+        }
+    }, []);
+
     const loadMonthData = useCallback(async () => {
         setLoading(true);
         try {
@@ -101,6 +121,15 @@ export function FunnelMetaTab({ allDeals }: FunnelMetaTabProps) {
                 fetchVendasForMonth(selectedYear, selectedMonth),
                 fetchAllAdsSpend(selectedYear, selectedMonth),
             ]);
+
+            // Sync Meta Ads if needed (non-blocking)
+            syncMetaAdsIfNeeded(selectedYear, selectedMonth, allAds).then(async () => {
+                // Re-fetch ads data after sync
+                const updatedAds = await fetchAllAdsSpend(selectedYear, selectedMonth);
+                if (updatedAds.meta.spend !== allAds.meta.spend) {
+                    setAdsData(updatedAds);
+                }
+            });
 
             setTarget(targetData);
             setAdsData(allAds);
