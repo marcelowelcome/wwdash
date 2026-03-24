@@ -2,16 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { fetchMetaAdsInsights } from "@/lib/meta-ads-api";
 
-const SYNC_SECRET = process.env.SYNC_SECRET;
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-
-// Use service role for writes
-const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
-
 export async function POST(request: NextRequest) {
+    const supabaseAdmin = createClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.SUPABASE_SERVICE_ROLE_KEY!
+    );
     // Auth check (same pattern as /api/sync)
-    if (SYNC_SECRET) {
+    const syncSecret = process.env.SYNC_SECRET;
+    if (syncSecret) {
         const authHeader = request.headers.get("authorization");
         const origin = request.headers.get("origin") || "";
         const isFromDashboard =
@@ -19,7 +17,7 @@ export async function POST(request: NextRequest) {
             origin.includes("vercel.app") ||
             origin.includes("welcomeweddings");
 
-        if (authHeader !== `Bearer ${SYNC_SECRET}` && !isFromDashboard) {
+        if (authHeader !== `Bearer ${syncSecret}` && !isFromDashboard) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
     }
