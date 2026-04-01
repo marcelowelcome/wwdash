@@ -344,18 +344,25 @@ export default function Dashboard() {
         setSyncing(true);
         setSyncResult(null);
         try {
-            // Sync deals + Meta Ads in parallel
+            // Sync deals + Meta Ads + Google Ads in parallel
             const now = new Date();
-            const [dealsResp, metaResp] = await Promise.all([
+            const adsBody = JSON.stringify({
+                year: now.getFullYear(),
+                month: now.getMonth() + 1,
+                pipeline: "wedding",
+            });
+            const adsHeaders = { "Content-Type": "application/json" };
+            const [dealsResp, metaResp, googleResp] = await Promise.all([
                 fetch("/api/sync", { method: "POST" }),
                 fetch("/api/sync-meta-ads", {
                     method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                        year: now.getFullYear(),
-                        month: now.getMonth() + 1,
-                        pipeline: "wedding",
-                    }),
+                    headers: adsHeaders,
+                    body: adsBody,
+                }),
+                fetch("/api/sync-google-ads", {
+                    method: "POST",
+                    headers: adsHeaders,
+                    body: adsBody,
                 }),
             ]);
 
@@ -370,10 +377,14 @@ export default function Dashboard() {
                 loadData();
             }
 
-            // Log Meta Ads sync result (non-blocking)
+            // Log ads sync results (non-blocking)
             if (metaResp.ok) {
                 const metaData = await metaResp.json();
                 console.log("[Sync] Meta Ads:", metaData);
+            }
+            if (googleResp.ok) {
+                const googleData = await googleResp.json();
+                console.log("[Sync] Google Ads:", googleData);
             }
         } catch (e) {
             setSyncResult({ error: e instanceof Error ? e.message : "Falha na conexão" });
