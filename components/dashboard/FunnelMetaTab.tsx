@@ -91,24 +91,34 @@ export function FunnelMetaTab({ allDeals }: FunnelMetaTabProps) {
         setSelectedMonth(month);
     };
 
-    // Sync Meta Ads for current month if cache is empty
-    const syncMetaAdsIfNeeded = useCallback(async (year: number, month: number, currentAds: { meta: AdsSpendData }) => {
+    // Sync ads for current month if cache is empty
+    const syncAdsIfNeeded = useCallback(async (year: number, month: number, currentAds: { meta: AdsSpendData; google: AdsSpendData }) => {
         const now = new Date();
         const isCurrentMonth = year === now.getFullYear() && month === now.getMonth() + 1;
-        const hasNoMetaData = currentAds.meta.spend === 0 && currentAds.meta.impressions === 0;
+        const body = JSON.stringify({ year, month, pipeline: "wedding" });
+        const headers = { "Content-Type": "application/json" };
 
-        // Sync if current month or no data
-        if (isCurrentMonth || hasNoMetaData) {
-            try {
-                await fetch("/api/sync-meta-ads", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ year, month, pipeline: "wedding" }),
-                });
-            } catch (e) {
-                console.warn("[FunnelMetaTab] Meta Ads sync failed:", e);
-            }
+        const syncs: Promise<void>[] = [];
+
+        // Sync Meta if current month or no data
+        if (isCurrentMonth || (currentAds.meta.spend === 0 && currentAds.meta.impressions === 0)) {
+            syncs.push(
+                fetch("/api/sync-meta-ads", { method: "POST", headers, body })
+                    .then(() => {})
+                    .catch((e) => console.warn("[FunnelMetaTab] Meta Ads sync failed:", e))
+            );
         }
+
+        // Sync Google if current month or no data
+        if (isCurrentMonth || (currentAds.google.spend === 0 && currentAds.google.impressions === 0)) {
+            syncs.push(
+                fetch("/api/sync-google-ads", { method: "POST", headers, body })
+                    .then(() => {})
+                    .catch((e) => console.warn("[FunnelMetaTab] Google Ads sync failed:", e))
+            );
+        }
+
+        await Promise.all(syncs);
     }, []);
 
     const loadMonthData = useCallback(async () => {
@@ -122,11 +132,11 @@ export function FunnelMetaTab({ allDeals }: FunnelMetaTabProps) {
                 fetchAllAdsSpend(selectedYear, selectedMonth),
             ]);
 
-            // Sync Meta Ads if needed (non-blocking)
-            syncMetaAdsIfNeeded(selectedYear, selectedMonth, allAds).then(async () => {
+            // Sync ads if needed (non-blocking)
+            syncAdsIfNeeded(selectedYear, selectedMonth, allAds).then(async () => {
                 // Re-fetch ads data after sync
                 const updatedAds = await fetchAllAdsSpend(selectedYear, selectedMonth);
-                if (updatedAds.meta.spend !== allAds.meta.spend) {
+                if (updatedAds.meta.spend !== allAds.meta.spend || updatedAds.google.spend !== allAds.google.spend) {
                     setAdsData(updatedAds);
                 }
             });
