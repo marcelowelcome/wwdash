@@ -71,7 +71,7 @@ function PotencialSectionInner({ monthlyPotential, closerAndWonDeals, scoredAll 
                         <Tooltip
                             contentStyle={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 8, fontSize: 11 }}
                             labelStyle={{ color: T.cream, fontWeight: 700 }}
-                            formatter={(value: number | undefined, name: string | undefined) => (name ?? "") === "Conv. %" ? [`${value ?? 0}%`, name ?? ""] as [string, string] : [value ?? 0, name ?? ""] as [number, string]}
+                            formatter={(value, name) => (String(name) === "Conv. %" ? [`${value ?? 0}%`, String(name)] : [value ?? 0, String(name)])}
                         />
                         <Bar yAxisId="left" dataKey="bandA" name="Tier A" stackId="s" fill={BAND_COLOR.A} maxBarSize={36} />
                         <Bar yAxisId="left" dataKey="bandB" name="Tier B" stackId="s" fill={BAND_COLOR.B} maxBarSize={36} />

@@ -653,3 +653,137 @@ export async function fetchAllAdsSpend(
         },
     };
 }
+
+// ─── ADS DAILY & CAMPAIGN ─────────────────────────────────────────────────────
+
+export interface AdsDailyRow {
+    date: string;
+    source: "meta_ads" | "google_ads";
+    spend: number;
+    impressions: number;
+    clicks: number;
+}
+
+export interface AdsCampaignRow {
+    campaign_id: string;
+    campaign_name: string;
+    source: "meta_ads" | "google_ads";
+    spend: number;
+    impressions: number;
+    clicks: number;
+}
+
+export interface DailyChartRow {
+    date: string;
+    metaSpend: number;
+    googleSpend: number;
+    totalSpend: number;
+    metaClicks: number;
+    googleClicks: number;
+    totalClicks: number;
+}
+
+/**
+ * Fetches daily ads data from cache for a given month.
+ */
+export async function fetchAdsDailyData(
+    year: number,
+    month: number
+): Promise<AdsDailyRow[]> {
+    try {
+        const startDate = `${year}-${String(month).padStart(2, "0")}-01`;
+        const lastDay = new Date(year, month, 0).getDate();
+        const endDate = `${year}-${String(month).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
+
+        const { data, error } = await supabase
+            .from("ads_daily_cache")
+            .select("date, source, spend, impressions, clicks")
+            .gte("date", startDate)
+            .lte("date", endDate)
+            .or("pipeline.eq.wedding,pipeline.is.null")
+            .order("date", { ascending: true });
+
+        if (error || !data) return [];
+
+        return data.map((row) => ({
+            date: row.date,
+            source: row.source as "meta_ads" | "google_ads",
+            spend: Number(row.spend) || 0,
+            impressions: row.impressions || 0,
+            clicks: row.clicks || 0,
+        }));
+    } catch (error) {
+        console.error("[fetchAdsDailyData] Error:", error);
+        return [];
+    }
+}
+
+/**
+ * Fetches campaign-level ads data from cache for a given month.
+ */
+export async function fetchAdsCampaignData(
+    year: number,
+    month: number
+): Promise<AdsCampaignRow[]> {
+    try {
+        const { data, error } = await supabase
+            .from("ads_campaign_cache")
+            .select("campaign_id, campaign_name, source, spend, impressions, clicks")
+            .eq("year", year)
+            .eq("month", month)
+            .or("pipeline.eq.wedding,pipeline.is.null")
+            .order("spend", { ascending: false });
+
+        if (error || !data) return [];
+
+        return data.map((row) => ({
+            campaign_id: row.campaign_id,
+            campaign_name: row.campaign_name,
+            source: row.source as "meta_ads" | "google_ads",
+            spend: Number(row.spend) || 0,
+            impressions: row.impressions || 0,
+            clicks: row.clicks || 0,
+        }));
+    } catch (error) {
+        console.error("[fetchAdsCampaignData] Error:", error);
+        return [];
+    }
+}
+
+/**
+ * Fetches daily data merged by date for chart consumption.
+ */
+export async function fetchAllAdsDailyData(
+    year: number,
+    month: number
+): Promise<DailyChartRow[]> {
+    const rows = await fetchAdsDailyData(year, month);
+    const byDate = new Map<string, DailyChartRow>();
+
+    // Fill all days of the month
+    const lastDay = new Date(year, month, 0).getDate();
+    for (let d = 1; d <= lastDay; d++) {
+        const date = `${year}-${String(month).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+        byDate.set(date, {
+            date,
+            metaSpend: 0, googleSpend: 0, totalSpend: 0,
+            metaClicks: 0, googleClicks: 0, totalClicks: 0,
+        });
+    }
+
+    for (const row of rows) {
+        const entry = byDate.get(row.date);
+        if (!entry) continue;
+        if (row.source === "meta_ads") {
+            entry.metaSpend = row.spend;
+            entry.metaClicks = row.clicks;
+        } else {
+            entry.googleSpend = row.spend;
+            entry.googleClicks = row.clicks;
+        }
+        entry.totalSpend = entry.metaSpend + entry.googleSpend;
+        entry.totalClicks = entry.metaClicks + entry.googleClicks;
+    }
+
+    return Array.from(byDate.values());
+}

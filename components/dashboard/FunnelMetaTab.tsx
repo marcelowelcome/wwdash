@@ -3,15 +3,22 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { T } from "./theme";
 import { SectionTitle } from "./SectionTitle";
-import { MonthSelector } from "./MonthSelector";
+import { MonthSelector, type DateRangeValue } from "./MonthSelector";
 import { FunnelMetaTable } from "./FunnelMetaTable";
 import {
     fetchMonthlyTarget,
     fetchAllFunnelDealsForMonth,
     fetchVendasForMonth,
     fetchAllAdsSpend,
+    fetchAllAdsDailyData,
+    fetchAdsCampaignData,
+    upsertMonthlyTarget,
     type AdsSpendData,
+    type DailyChartRow,
+    type AdsCampaignRow,
 } from "@/lib/supabase-api";
+import { AdsDailyChart } from "./AdsDailyChart";
+import { AdsCampaignTable } from "./AdsCampaignTable";
 import { type WonDeal, type MonthlyTarget, type FunnelMetrics } from "@/lib/schemas";
 import {
     getMonthProgress,
@@ -72,6 +79,39 @@ function calculateMetricsFromDeals(deals: WonDeal[], year: number, month: number
 
 type ViewMode = "wedding" | "elopement" | "total";
 
+/** Aggregates daily chart data into AdsSpendData for a given date range. */
+function aggregateDailyToAds(
+    daily: DailyChartRow[],
+    range: DateRangeValue
+): { meta: AdsSpendData; google: AdsSpendData; total: AdsSpendData } {
+    const from = range.from.toISOString().slice(0, 10);
+    const to = range.to.toISOString().slice(0, 10);
+    const filtered = daily.filter((d) => d.date >= from && d.date <= to);
+
+    const meta = { spend: 0, impressions: 0, clicks: 0, cpc: 0, cpm: 0 };
+    const google = { spend: 0, impressions: 0, clicks: 0, cpc: 0, cpm: 0 };
+
+    for (const row of filtered) {
+        meta.spend += row.metaSpend;
+        meta.clicks += row.metaClicks;
+        google.spend += row.googleSpend;
+        google.clicks += row.googleClicks;
+    }
+
+    meta.cpc = meta.clicks > 0 ? meta.spend / meta.clicks : 0;
+    google.cpc = google.clicks > 0 ? google.spend / google.clicks : 0;
+
+    const total = {
+        spend: meta.spend + google.spend,
+        impressions: meta.impressions + google.impressions,
+        clicks: meta.clicks + google.clicks,
+        cpc: (meta.clicks + google.clicks) > 0 ? (meta.spend + google.spend) / (meta.clicks + google.clicks) : 0,
+        cpm: 0,
+    };
+
+    return { meta, google, total };
+}
+
 export function FunnelMetaTab({ allDeals }: FunnelMetaTabProps) {
     const now = new Date();
     const [selectedYear, setSelectedYear] = useState(now.getFullYear());
@@ -82,40 +122,48 @@ export function FunnelMetaTab({ allDeals }: FunnelMetaTabProps) {
     const [previousMetrics, setPreviousMetrics] = useState<FunnelMetrics | null>(null);
     const [cpl, setCpl] = useState(50);
     const [adsData, setAdsData] = useState<{ meta: AdsSpendData; google: AdsSpendData; total: AdsSpendData } | null>(null);
+    const [dailyData, setDailyData] = useState<DailyChartRow[]>([]);
+    const [campaignData, setCampaignData] = useState<AdsCampaignRow[]>([]);
+    const [dateRange, setDateRange] = useState<DateRangeValue | null>(null);
     const [viewMode, setViewMode] = useState<ViewMode>("wedding");
+    const [adsDetailOpen, setAdsDetailOpen] = useState(false);
 
     const monthProgress = getMonthProgress(selectedYear, selectedMonth);
 
-    const handleMonthChange = (year: number, month: number) => {
+    const handleDateChange = (year: number, month: number, range?: DateRangeValue | null) => {
         setSelectedYear(year);
         setSelectedMonth(month);
+        setDateRange(range ?? null);
     };
 
     // Sync ads for current month if cache is empty
     const syncAdsIfNeeded = useCallback(async (year: number, month: number, currentAds: { meta: AdsSpendData; google: AdsSpendData }) => {
         const now = new Date();
         const isCurrentMonth = year === now.getFullYear() && month === now.getMonth() + 1;
-        const body = JSON.stringify({ year, month, pipeline: "wedding" });
         const headers = { "Content-Type": "application/json" };
+
+        const fireSync = (endpoint: string, type: string) =>
+            fetch(endpoint, {
+                method: "POST",
+                headers,
+                body: JSON.stringify({ year, month, pipeline: "wedding", type }),
+            }).then(() => {}).catch((e) => console.warn(`[FunnelMetaTab] ${endpoint} ${type} sync failed:`, e));
 
         const syncs: Promise<void>[] = [];
 
-        // Sync Meta if current month or no data
-        if (isCurrentMonth || (currentAds.meta.spend === 0 && currentAds.meta.impressions === 0)) {
-            syncs.push(
-                fetch("/api/sync-meta-ads", { method: "POST", headers, body })
-                    .then(() => {})
-                    .catch((e) => console.warn("[FunnelMetaTab] Meta Ads sync failed:", e))
-            );
-        }
+        const needsMeta = isCurrentMonth || (currentAds.meta.spend === 0 && currentAds.meta.impressions === 0);
+        const needsGoogle = isCurrentMonth || (currentAds.google.spend === 0 && currentAds.google.impressions === 0);
 
-        // Sync Google if current month or no data
-        if (isCurrentMonth || (currentAds.google.spend === 0 && currentAds.google.impressions === 0)) {
-            syncs.push(
-                fetch("/api/sync-google-ads", { method: "POST", headers, body })
-                    .then(() => {})
-                    .catch((e) => console.warn("[FunnelMetaTab] Google Ads sync failed:", e))
-            );
+        // Monthly syncs
+        if (needsMeta) syncs.push(fireSync("/api/sync-meta-ads", "monthly"));
+        if (needsGoogle) syncs.push(fireSync("/api/sync-google-ads", "monthly"));
+
+        // Daily and campaign syncs (always for current month, or if no data)
+        if (needsMeta || needsGoogle) {
+            syncs.push(fireSync("/api/sync-meta-ads", "daily"));
+            syncs.push(fireSync("/api/sync-google-ads", "daily"));
+            syncs.push(fireSync("/api/sync-meta-ads", "campaign"));
+            syncs.push(fireSync("/api/sync-google-ads", "campaign"));
         }
 
         await Promise.all(syncs);
@@ -124,25 +172,39 @@ export function FunnelMetaTab({ allDeals }: FunnelMetaTabProps) {
     const loadMonthData = useCallback(async () => {
         setLoading(true);
         try {
-            // Fetch target, deals, and ads data for selected month
-            const [targetData, dealsData, vendasData, allAds] = await Promise.all([
+            // Fetch target, deals, ads, daily, and campaign data for selected month
+            const [targetData, dealsData, vendasData, allAds, daily, campaigns] = await Promise.all([
                 fetchMonthlyTarget(selectedYear, selectedMonth, "wedding"),
                 fetchAllFunnelDealsForMonth(selectedYear, selectedMonth),
                 fetchVendasForMonth(selectedYear, selectedMonth),
                 fetchAllAdsSpend(selectedYear, selectedMonth),
+                fetchAllAdsDailyData(selectedYear, selectedMonth),
+                fetchAdsCampaignData(selectedYear, selectedMonth),
             ]);
+
+            setDailyData(daily);
+            setCampaignData(campaigns);
 
             // Sync ads if needed (non-blocking)
             syncAdsIfNeeded(selectedYear, selectedMonth, allAds).then(async () => {
-                // Re-fetch ads data after sync
-                const updatedAds = await fetchAllAdsSpend(selectedYear, selectedMonth);
+                const [updatedAds, updatedDaily, updatedCampaigns] = await Promise.all([
+                    fetchAllAdsSpend(selectedYear, selectedMonth),
+                    fetchAllAdsDailyData(selectedYear, selectedMonth),
+                    fetchAdsCampaignData(selectedYear, selectedMonth),
+                ]);
                 if (updatedAds.meta.spend !== allAds.meta.spend || updatedAds.google.spend !== allAds.google.spend) {
-                    setAdsData(updatedAds);
+                    setAdsData(dateRange ? aggregateDailyToAds(updatedDaily, dateRange) : updatedAds);
                 }
+                if (updatedDaily.length > daily.length) {
+                    setDailyData(updatedDaily);
+                    if (dateRange) setAdsData(aggregateDailyToAds(updatedDaily, dateRange));
+                }
+                if (updatedCampaigns.length > campaigns.length) setCampaignData(updatedCampaigns);
             });
 
             setTarget(targetData);
-            setAdsData(allAds);
+            // When dateRange is set, aggregate ads from daily data for that range
+            setAdsData(dateRange ? aggregateDailyToAds(daily, dateRange) : allAds);
 
             // Combine fetched deals with vendas deals (deduplicated)
             const existingIds = new Set(dealsData.map((d) => d.id));
@@ -186,7 +248,7 @@ export function FunnelMetaTab({ allDeals }: FunnelMetaTabProps) {
         } finally {
             setLoading(false);
         }
-    }, [selectedYear, selectedMonth]);
+    }, [selectedYear, selectedMonth, dateRange]);
 
     useEffect(() => {
         loadMonthData();
@@ -258,7 +320,7 @@ export function FunnelMetaTab({ allDeals }: FunnelMetaTabProps) {
                         </button>
                     </div>
                 </div>
-                <MonthSelector selectedYear={selectedYear} selectedMonth={selectedMonth} onChange={handleMonthChange} />
+                <MonthSelector selectedYear={selectedYear} selectedMonth={selectedMonth} dateRange={dateRange} onChange={handleDateChange} />
             </div>
 
             {/* Loading state */}
@@ -268,7 +330,7 @@ export function FunnelMetaTab({ allDeals }: FunnelMetaTabProps) {
                 </div>
             )}
 
-            {/* Ads Breakdown Cards */}
+            {/* Ads Breakdown Cards (always visible) */}
             {!loading && adsData && (
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
                     <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 8, padding: 16 }}>
@@ -307,12 +369,52 @@ export function FunnelMetaTab({ allDeals }: FunnelMetaTabProps) {
                     deals={combinedDeals}
                     year={selectedYear}
                     month={selectedMonth}
+                    dateRange={dateRange}
                     target={target}
                     previousMetrics={previousMetrics}
                     monthProgress={monthProgress}
                     cpl={cpl}
                     viewMode={viewMode}
+                    onTargetUpdate={async (field, value) => {
+                        const updated = await upsertMonthlyTarget(selectedYear, selectedMonth, "wedding", { [field]: value });
+                        if (updated) setTarget(updated);
+                    }}
                 />
+            )}
+
+            {/* Ads Detail — collapsible (daily chart + campaigns) */}
+            {!loading && adsData && (dailyData.length > 0 || campaignData.length > 0) && (
+                <div>
+                    <button
+                        onClick={() => setAdsDetailOpen((v) => !v)}
+                        style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 8,
+                            background: "none",
+                            border: `1px solid ${T.border}`,
+                            borderRadius: 8,
+                            padding: "10px 16px",
+                            cursor: "pointer",
+                            color: T.cream,
+                            fontSize: 13,
+                            fontWeight: 600,
+                            width: "100%",
+                        }}
+                    >
+                        <span style={{ transform: adsDetailOpen ? "rotate(90deg)" : "rotate(0deg)", transition: "transform 0.15s" }}>
+                            ▶
+                        </span>
+                        Ads Detail — Spend Diário & Campanhas
+                    </button>
+
+                    {adsDetailOpen && (
+                        <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 12 }}>
+                            {dailyData.length > 0 && <AdsDailyChart data={dailyData} />}
+                            {campaignData.length > 0 && <AdsCampaignTable data={campaignData} />}
+                        </div>
+                    )}
+                </div>
             )}
 
             {/* Info */}
