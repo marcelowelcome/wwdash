@@ -171,14 +171,14 @@ function Header({ tab, setTab, metrics, loading, lastUpdate, onRefresh, onVersio
                     </button>
                 ))}
                 <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 4, padding: "0 4px" }}>
-                    <span style={{ fontSize: 9, color: T.border, marginRight: 2 }}>Janela:</span>
+                    <span style={{ fontSize: 9, color: T.muted, marginRight: 2 }}>Janela:</span>
                     {PERIOD_OPTIONS.map(opt => (
                         <button
                             key={opt.value}
                             onClick={() => onPeriodChange(opt.value)}
                             style={{
                                 background: globalPeriod === opt.value ? `${T.gold}20` : "transparent",
-                                color: globalPeriod === opt.value ? T.gold : T.border,
+                                color: globalPeriod === opt.value ? T.gold : T.muted,
                                 border: globalPeriod === opt.value ? `1px solid ${T.gold}55` : "1px solid transparent",
                                 borderRadius: 4,
                                 padding: "2px 8px",

@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { fetchGoogleAdsInsights } from "@/lib/google-ads-api";
+import {
+    fetchGoogleAdsInsights,
+    fetchGoogleAdsDailyInsights,
+    fetchGoogleAdsCampaignInsights,
+} from "@/lib/google-ads-api";
 
 export async function POST(request: NextRequest) {
     const supabaseAdmin = createClient(
@@ -25,7 +29,7 @@ export async function POST(request: NextRequest) {
 
     try {
         const body = await request.json();
-        const { year, month, pipeline = "wedding" } = body;
+        const { year, month, pipeline = "wedding", type = "monthly" } = body;
 
         if (!year || !month) {
             return NextResponse.json(
@@ -34,10 +38,53 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        // Fetch from Google Ads API
-        const data = await fetchGoogleAdsInsights(year, month);
+        const now = new Date().toISOString();
 
-        // Upsert to cache
+        if (type === "daily") {
+            const rows = await fetchGoogleAdsDailyInsights(year, month);
+            if (rows.length > 0) {
+                const { error } = await supabaseAdmin.from("ads_daily_cache").upsert(
+                    rows.map((r) => ({
+                        date: r.date,
+                        source: "google_ads",
+                        pipeline,
+                        spend: r.spend,
+                        impressions: r.impressions,
+                        clicks: r.clicks,
+                        updated_at: now,
+                    })),
+                    { onConflict: "date,source,pipeline" }
+                );
+                if (error) throw new Error(`Database error: ${error.message}`);
+            }
+            return NextResponse.json({ success: true, data: rows, period: { year, month, pipeline, type } });
+        }
+
+        if (type === "campaign") {
+            const rows = await fetchGoogleAdsCampaignInsights(year, month);
+            if (rows.length > 0) {
+                const { error } = await supabaseAdmin.from("ads_campaign_cache").upsert(
+                    rows.map((r) => ({
+                        year,
+                        month,
+                        source: "google_ads",
+                        pipeline,
+                        campaign_id: r.campaign_id,
+                        campaign_name: r.campaign_name,
+                        spend: r.spend,
+                        impressions: r.impressions,
+                        clicks: r.clicks,
+                        updated_at: now,
+                    })),
+                    { onConflict: "year,month,source,pipeline,campaign_id" }
+                );
+                if (error) throw new Error(`Database error: ${error.message}`);
+            }
+            return NextResponse.json({ success: true, data: rows, period: { year, month, pipeline, type } });
+        }
+
+        // Default: monthly
+        const data = await fetchGoogleAdsInsights(year, month);
         const { error } = await supabaseAdmin.from("ads_spend_cache").upsert(
             {
                 year,
@@ -49,20 +96,13 @@ export async function POST(request: NextRequest) {
                 clicks: data.clicks,
                 cpc: data.cpc,
                 cpm: data.cpm,
-                updated_at: new Date().toISOString(),
+                updated_at: now,
             },
             { onConflict: "year,month,source,pipeline" }
         );
+        if (error) throw new Error(`Database error: ${error.message}`);
 
-        if (error) {
-            throw new Error(`Database error: ${error.message}`);
-        }
-
-        return NextResponse.json({
-            success: true,
-            data,
-            period: { year, month, pipeline },
-        });
+        return NextResponse.json({ success: true, data, period: { year, month, pipeline, type } });
     } catch (error) {
         console.error("[sync-google-ads] Error:", error);
         return NextResponse.json(
