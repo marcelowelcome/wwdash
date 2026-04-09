@@ -77,7 +77,7 @@ function calculateMetricsFromDeals(deals: WonDeal[], year: number, month: number
     };
 }
 
-type ViewMode = "wedding" | "elopement" | "total";
+type ViewMode = "wedding" | "elopement" | "outros" | "total";
 
 /** Aggregates daily chart data into AdsSpendData for a given date range. */
 function aggregateDailyToAds(
@@ -301,6 +301,23 @@ export function FunnelMetaTab({ allDeals }: FunnelMetaTabProps) {
                             }}
                         >
                             Elopement
+                        </button>
+                        <button
+                            onClick={() => setViewMode("outros")}
+                            style={{
+                                padding: "6px 12px",
+                                fontSize: 11,
+                                fontWeight: 600,
+                                border: "none",
+                                borderRadius: 4,
+                                cursor: "pointer",
+                                background: viewMode === "outros" ? T.orange : "transparent",
+                                color: viewMode === "outros" ? T.bg : T.muted,
+                                transition: "all 0.15s",
+                            }}
+                            title="Outros Desqualificados + Internacional"
+                        >
+                            Outros / Intl
                         </button>
                         <button
                             onClick={() => setViewMode("total")}

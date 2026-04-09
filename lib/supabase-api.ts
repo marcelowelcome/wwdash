@@ -72,6 +72,14 @@ const DEAL_COLUMNS = [
 
 // Wedding Pipeline IDs
 const WW_PIPELINE_IDS = [1, 3, 4, 17, 31];
+// Wedding Pipeline names (used as fallback for rows where pipeline_id is NULL)
+const WW_PIPELINE_NAMES = [
+    "SDR Weddings",
+    "Closer Weddings",
+    "Planejamento Weddings",
+    "WW - Internacional",
+    "Outros Desqualificados | Wedding",
+];
 const ELOPEMENT_PIPELINE_ID = 12;
 
 // ─── HELPERS ───────────────────────────────────────────────────────────────────
@@ -368,7 +376,8 @@ export function buildWeekLabel(key: string): string {
 
 /**
  * Fetches Wedding deals for a specific month (by created_at).
- * Filters by pipeline_id IN (1, 3, 4, 17, 31) AND title NOT starts with 'EW'
+ * Matches by pipeline_id IN (1, 3, 4, 17, 31) OR pipeline name (fallback for NULL pipeline_id rows).
+ * Excludes deals with title starting with 'EW' (Elopement marker).
  */
 export async function fetchWeddingDealsForMonth(
     year: number,
@@ -376,34 +385,57 @@ export async function fetchWeddingDealsForMonth(
 ): Promise<WonDeal[]> {
     const startDate = new Date(year, month - 1, 1);
     const endDate = new Date(year, month, 0, 23, 59, 59);
+    const startIso = startDate.toISOString();
+    const endIso = endDate.toISOString();
 
-    let allRows: any[] = [];
-    let from = 0;
-    const limit = 1000;
+    const fetchAllPages = async (
+        applyFilter: (q: any) => any
+    ): Promise<any[]> => {
+        let allRows: any[] = [];
+        let from = 0;
+        const limit = 1000;
+        while (true) {
+            const base = supabase
+                .from("deals")
+                .select(DEAL_COLUMNS)
+                .gte("created_at", startIso)
+                .lte("created_at", endIso)
+                // Exclude EW% titles, but keep rows where title is NULL
+                .or("title.is.null,title.not.ilike.EW%");
+            const { data, error } = await applyFilter(base)
+                .order("created_at", { ascending: false })
+                .range(from, from + limit - 1);
 
-    while (true) {
-        const { data, error } = await supabase
-            .from("deals")
-            .select(DEAL_COLUMNS)
-            .gte("created_at", startDate.toISOString())
-            .lte("created_at", endDate.toISOString())
-            .in("pipeline_id", WW_PIPELINE_IDS)
-            .not("title", "ilike", "EW%")
-            .order("created_at", { ascending: false })
-            .range(from, from + limit - 1);
-
-        if (error) {
-            console.error("[fetchWeddingDealsForMonth] Error:", error);
-            break;
+            if (error) {
+                console.error("[fetchWeddingDealsForMonth] Error:", error);
+                break;
+            }
+            if (!data || data.length === 0) break;
+            allRows = allRows.concat(data);
+            if (data.length < limit) break;
+            from += limit;
         }
-        if (!data || data.length === 0) break;
+        return allRows;
+    };
 
-        allRows = allRows.concat(data);
-        if (data.length < limit) break;
-        from += limit;
+    // 1) Match by pipeline_id (the common case)
+    const byId = await fetchAllPages((q) => q.in("pipeline_id", WW_PIPELINE_IDS));
+    // 2) Match by pipeline NAME for rows where pipeline_id is NULL (fallback)
+    const byName = await fetchAllPages((q) =>
+        q.is("pipeline_id", null).in("pipeline", WW_PIPELINE_NAMES)
+    );
+
+    // Dedup by id (byId takes priority)
+    const seen = new Set<string>();
+    const result: WonDeal[] = [];
+    for (const row of [...byId, ...byName]) {
+        const id = String(row.id);
+        if (!seen.has(id)) {
+            seen.add(id);
+            result.push(mapRowToWonDeal(row));
+        }
     }
-
-    return allRows.map((row) => mapRowToWonDeal(row));
+    return result;
 }
 
 /**
