@@ -16,9 +16,10 @@ import {
     isInWwPipeline,
     isInWwLeadsPipeline,
     isInWwMqlPipeline,
+    isInWwOutrosPipeline,
 } from "@/lib/funnel-utils";
 
-type ViewMode = "wedding" | "elopement" | "total";
+type ViewMode = "wedding" | "elopement" | "outros" | "total";
 
 interface DateRangeValue {
     from: Date;
@@ -157,17 +158,19 @@ export function FunnelMetaTable({ deals, year, month, dateRange, target, previou
             }
         }
 
-        // Total mode: all deals (Wedding + Elopement combined)
-        if (viewMode === "total") {
+        // Outros mode: only "WW - Internacional" + "Outros Desqualificados | Wedding"
+        if (viewMode === "outros") {
+            const outrosDeals = deals.filter((d) => isInWwOutrosPipeline(d));
             switch (stage) {
                 case "leads":
-                    return deals.filter((d) => isInWwLeadsPipeline(d) && matchesDate(d.cdate));
+                    return outrosDeals.filter((d) => matchesDate(d.cdate));
                 case "mql":
-                    return deals.filter((d) => isInWwLeadsPipeline(d) && matchesDate(d.cdate));
+                    // These pipelines aren't part of MQL by definition; show same as leads for visibility
+                    return outrosDeals.filter((d) => matchesDate(d.cdate));
                 case "agendamento":
-                    return deals.filter((d) => matchesDate(d.data_reuniao_1));
+                    return outrosDeals.filter((d) => matchesDate(d.data_reuniao_1));
                 case "reunioes":
-                    return deals.filter(
+                    return outrosDeals.filter(
                         (d) =>
                             matchesDate(d.data_reuniao_1) &&
                             d.como_foi_feita_a_1a_reuniao !== null &&
@@ -175,18 +178,54 @@ export function FunnelMetaTable({ deals, year, month, dateRange, target, previou
                             d.como_foi_feita_a_1a_reuniao !== "Nao teve reuniao"
                     );
                 case "qualificado":
-                    return deals.filter((d) => matchesDate(d.data_qualificado));
+                    return outrosDeals.filter((d) => matchesDate(d.data_qualificado));
                 case "closerAgendada":
-                    return deals.filter((d) => matchesDate(d.data_horario_agendamento_closer));
+                    return outrosDeals.filter((d) => matchesDate(d.data_horario_agendamento_closer));
                 case "closerRealizada":
-                    return deals.filter(
+                    return outrosDeals.filter(
                         (d) =>
                             matchesDate(d.data_horario_agendamento_closer) &&
                             d.reuniao_closer !== null &&
                             d.reuniao_closer !== ""
                     );
                 case "vendas":
-                    return deals.filter((d) => matchesDate(d.data_fechamento));
+                    return outrosDeals.filter((d) => matchesDate(d.data_fechamento));
+                default:
+                    return [];
+            }
+        }
+
+        // Total mode: Wedding + Elopement + Outros/Intl (all WW leads pipelines: 1,3,4,12,17,31)
+        if (viewMode === "total") {
+            const totalDeals = deals.filter((d) => isInWwLeadsPipeline(d));
+            switch (stage) {
+                case "leads":
+                    return totalDeals.filter((d) => matchesDate(d.cdate));
+                case "mql":
+                    return totalDeals.filter((d) => matchesDate(d.cdate));
+                case "agendamento":
+                    return totalDeals.filter((d) => matchesDate(d.data_reuniao_1));
+                case "reunioes":
+                    return totalDeals.filter(
+                        (d) =>
+                            matchesDate(d.data_reuniao_1) &&
+                            d.como_foi_feita_a_1a_reuniao !== null &&
+                            d.como_foi_feita_a_1a_reuniao !== "" &&
+                            d.como_foi_feita_a_1a_reuniao !== "Nao teve reuniao"
+                    );
+                case "qualificado":
+                    return totalDeals.filter((d) => matchesDate(d.data_qualificado));
+                case "closerAgendada":
+                    return totalDeals.filter((d) => matchesDate(d.data_horario_agendamento_closer));
+                case "closerRealizada":
+                    return totalDeals.filter(
+                        (d) =>
+                            matchesDate(d.data_horario_agendamento_closer) &&
+                            d.reuniao_closer !== null &&
+                            d.reuniao_closer !== ""
+                    );
+                case "vendas":
+                    return totalDeals.filter((d) => matchesDate(d.data_fechamento));
                 default:
                     return [];
             }
