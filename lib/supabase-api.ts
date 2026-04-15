@@ -130,6 +130,11 @@ function mapRowToWonDeal(row: any, groupIdFallback?: string, includeCf = false):
         reuniao_closer: row.reuniao_closer || null,
         pipeline_id: row.pipeline_id != null ? Number(row.pipeline_id) : null,
         title: row.title || null,
+        qualificado_para_sql: mapSql(row.qualificado_sql) || null,
+        motivos_qualificacao_sdr: row.motivos_qualificacao_sdr || null,
+        motivo_desqualificacao_sdr: row.motivo_desqualifica_o_sdr || null,
+        motivo_de_perda: row.motivo_de_perda || null,
+        ww_closer_motivo_de_perda: row.ww_closer_motivo_de_perda || null,
         _cf: includeCf ? {
             [FQ_ID]: row.motivos_qualificacao_sdr || "",
             [FL_ID]: row.ww_closer_motivo_de_perda || row.motivo_de_perda || "",

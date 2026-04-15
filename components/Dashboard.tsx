@@ -13,6 +13,7 @@ import { DictionaryTab } from "./dashboard/DictionaryTab";
 import { ContratosTab } from "./dashboard/ContratosTab";
 import { PerfilScoreTab } from "./dashboard/PerfilScoreTab";
 import { FunnelMetaTab } from "./dashboard/FunnelMetaTab";
+import { JornadaTab } from "./dashboard/JornadaTab";
 import { ChatTab } from "./dashboard/ChatTab";
 import { ChatPopup } from "./dashboard/ChatPopup";
 import { ChangelogModal } from "./dashboard/ChangelogModal";
@@ -32,10 +33,11 @@ function deduplicateDeals(deals: WonDeal[]): WonDeal[] {
     });
 }
 
-type TabId = "overview" | "funnel" | "sdr" | "closer" | "pipeline" | "contratos" | "perfil-score" | "dictionary" | "funnel-metas" | "chat";
+type TabId = "overview" | "jornada" | "funnel" | "sdr" | "closer" | "pipeline" | "contratos" | "perfil-score" | "dictionary" | "funnel-metas" | "chat";
 
 const TABS: { id: TabId; label: string }[] = [
     { id: "overview", label: "Visão Geral" },
+    { id: "jornada", label: "Jornada" },
     { id: "funnel-metas", label: "Funil" },
     { id: "sdr", label: "SDR" },
     { id: "closer", label: "Closer" },
@@ -481,6 +483,7 @@ export default function Dashboard() {
                 {tab === "perfil-score" && <PerfilScoreTab wonDeals={wonDeals} closerDeals={closerDeals} sdrDeals={sdrDeals} fieldMap={acFieldMap} />}
                 {tab === "dictionary" && <DictionaryTab />}
                 {tab === "funnel-metas" && <FunnelMetaTab allDeals={allDeals} />}
+                {tab === "jornada" && <JornadaTab allDeals={allDeals} />}
                 {tab === "chat" && (
                     <ChatTab
                         messages={chat.messages}

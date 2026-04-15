@@ -91,6 +91,12 @@ export const WonDealSchema = DealSchema.extend({
     reuniao_closer: z.string().nullable().optional(),
     pipeline_id: z.number().nullable().optional(),
     title: z.string().nullable().optional(),
+    // Funil Jornada fields
+    qualificado_para_sql: z.string().nullable().optional(),
+    motivos_qualificacao_sdr: z.string().nullable().optional(),
+    motivo_desqualificacao_sdr: z.string().nullable().optional(),
+    motivo_de_perda: z.string().nullable().optional(),
+    ww_closer_motivo_de_perda: z.string().nullable().optional(),
 });
 
 export type WonDeal = z.infer<typeof WonDealSchema>;

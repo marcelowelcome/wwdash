@@ -277,8 +277,15 @@ export function DealsModal({ isOpen, onClose, title, deals, stageKey }: DealsMod
                         </thead>
                         <tbody>
                             {filteredDeals.map((deal) => (
-                                <tr key={deal.id}>
-                                    <td style={{ ...tdStyle, fontFamily: "monospace", fontSize: 10 }}>{deal.id}</td>
+                                <tr
+                                    key={deal.id}
+                                    onClick={() => window.open(`https://welcometrips.activehosted.com/app/deals/${deal.id}`, "_blank", "noopener,noreferrer")}
+                                    style={{ cursor: "pointer" }}
+                                    onMouseEnter={(e) => (e.currentTarget.style.background = T.card)}
+                                    onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+                                    title="Abrir no ActiveCampaign"
+                                >
+                                    <td style={{ ...tdStyle, fontFamily: "monospace", fontSize: 10, color: T.gold }}>{deal.id} ↗</td>
                                     <td style={{ ...tdStyle }}>{deal.pipeline || "-"}</td>
                                     <td style={{ ...tdStyle }}>{deal.stage || "-"}</td>
                                     <td style={{ ...tdStyle }}>{getStatusBadge(deal.status)}</td>
