@@ -7,6 +7,18 @@ export interface VersionEntry {
 
 export const VERSION_HISTORY: VersionEntry[] = [
     {
+        version: "2.6.1",
+        date: "16/04/2026",
+        description: "Iterações no Deep Dive da Jornada: recuperação de valores legados de orçamento, novos campos e limpeza de blocos sem contexto.",
+        changes: [
+            "Safety net para orçamento em mapRowToWonDeal: valores legados >= R$ 1M e múltiplos de 100 são divididos por 100 na leitura — corrige valores antigos armazenados com formatação BR removida ('R$ 50.000,00' → '5000000' no banco).",
+            "Deep Dive: novos campos na seção 'Respostas do lead' (como_conheceu_a_ww) e 'Registro do SDR' (como_foi_feita_a_1a_reuniao, tipo_reuniao_closer).",
+            "Deep Dive: blocos sem contexto (nenhum deal respondeu no período atual nem no anterior) são escondidos automaticamente. Grupos inteiros vazios também somem — nada de 'Sem respostas neste período' repetido.",
+            "Novo campo como_conheceu_a_ww exposto em WonDeal schema, DEAL_COLUMNS e mapRowToWonDeal.",
+            "dash-webhook: parseNumber corrigido para entender formato BR ('R$ 50.000,00' → 50000, '1.500.000' → 1500000) em _shared/field-maps.ts, scripts/backfill-deals.mjs e scripts/reprocess-raw-data.mjs. ⚠️ Deploy pendente — estado local não commitado.",
+        ],
+    },
+    {
         version: "2.6.0",
         date: "16/04/2026",
         description: "Nova aba Jornada do Lead — análise ponta-a-ponta do funil em 7 etapas com responsáveis, metas, comparação MoM justa e deep dive por etapa.",
