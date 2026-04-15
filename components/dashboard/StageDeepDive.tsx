@@ -348,10 +348,11 @@ export function StageDeepDive({ isOpen, onClose, stage, stagePrev, periodoLabel,
                     </div>
                     <button
                         onClick={onClose}
+                        aria-label="Fechar"
                         style={{ background: "transparent", border: "none", cursor: "pointer", padding: 4 }}
                         title="Fechar"
                     >
-                        <X size={22} color={T.muted} />
+                        <X size={22} color={T.muted} aria-hidden="true" />
                     </button>
                 </div>
 

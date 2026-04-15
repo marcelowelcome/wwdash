@@ -214,6 +214,7 @@ export function DealsModal({ isOpen, onClose, title, deals, stageKey }: DealsMod
                         </button>
                         <button
                             onClick={onClose}
+                            aria-label="Fechar"
                             style={{
                                 background: "transparent",
                                 border: "none",
@@ -221,7 +222,7 @@ export function DealsModal({ isOpen, onClose, title, deals, stageKey }: DealsMod
                                 padding: 4,
                             }}
                         >
-                            <X size={20} color={T.muted} />
+                            <X size={20} color={T.muted} aria-hidden="true" />
                         </button>
                     </div>
                 </div>

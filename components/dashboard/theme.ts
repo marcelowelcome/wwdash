@@ -10,7 +10,7 @@ export const T = {
     rose: "#C2758A",
     gold: "#D4A35A",
     cream: "#F5EDE0",
-    muted: "#6B5C7A",
+    muted: "#8E7DA0",
     red: "#E05252",
     orange: "#E08C3A",
     green: "#3DBF8A",
