@@ -97,6 +97,7 @@ export const WonDealSchema = DealSchema.extend({
     motivo_desqualificacao_sdr: z.string().nullable().optional(),
     motivo_de_perda: z.string().nullable().optional(),
     ww_closer_motivo_de_perda: z.string().nullable().optional(),
+    como_conheceu_a_ww: z.string().nullable().optional(),
 });
 
 export type WonDeal = z.infer<typeof WonDealSchema>;

@@ -42,6 +42,7 @@ interface FieldDef {
 }
 
 const LEAD_FIELDS: FieldDef[] = [
+    { key: "como_conheceu_a_ww", label: "Como conheceu a WW", kind: "categorical" },
     { key: "destino", label: "Destino desejado", kind: "categorical" },
     { key: "cidade", label: "Cidade", kind: "categorical" },
     {
@@ -77,6 +78,8 @@ const LEAD_FIELDS: FieldDef[] = [
 ];
 
 const SDR_FIELDS: FieldDef[] = [
+    { key: "como_foi_feita_a_1a_reuniao", label: "Como foi feita a 1ª reunião", kind: "categorical" },
+    { key: "tipo_reuniao_closer", label: "Como foi feita a reunião com o Closer", kind: "categorical" },
     { key: "qualificado_para_sql", label: "Qualificado para o Closer", kind: "categorical" },
     { key: "motivos_qualificacao_sdr", label: "Motivos de qualificação", kind: "list" },
     { key: "motivo_desqualificacao_sdr", label: "Motivos de desqualificação", kind: "list" },
@@ -165,6 +168,8 @@ function FieldBlock({
         () => buildFieldBreakdown(field, deals, prevDeals),
         [field, deals, prevDeals],
     );
+    // Hide blocks without context in either the current or the previous period
+    if (answered === 0 && answeredPrev === 0) return null;
     const fillPct = total > 0 ? (answered / total) * 100 : 0;
     const fillPctPrev = totalPrev > 0 ? (answeredPrev / totalPrev) * 100 : null;
     const maxCount = rows.reduce((m, r) => Math.max(m, r.count), 1);
@@ -241,6 +246,16 @@ function FieldBlock({
     );
 }
 
+function hasContext(field: FieldDef, deals: WonDeal[], prevDeals: WonDeal[]): boolean {
+    for (const d of deals) {
+        if (toBucket(d[field.key], field) != null) return true;
+    }
+    for (const d of prevDeals) {
+        if (toBucket(d[field.key], field) != null) return true;
+    }
+    return false;
+}
+
 function FieldGroup({
     title,
     subtitle,
@@ -254,6 +269,8 @@ function FieldGroup({
     deals: WonDeal[];
     prevDeals: WonDeal[];
 }) {
+    const visibleFields = fields.filter((f) => hasContext(f, deals, prevDeals));
+    if (visibleFields.length === 0) return null;
     return (
         <div
             style={{
@@ -268,7 +285,7 @@ function FieldGroup({
             </div>
             <div style={{ fontSize: 12, color: T.muted, marginBottom: 10 }}>{subtitle}</div>
             <div>
-                {fields.map((f) => (
+                {visibleFields.map((f) => (
                     <FieldBlock key={f.key as string} field={f} deals={deals} prevDeals={prevDeals} />
                 ))}
             </div>

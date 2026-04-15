@@ -67,7 +67,7 @@ const DEAL_COLUMNS = [
     "ww_foi_apresentado_detalhamento_de_or_amento", "data_qualificado", "reuniao_closer",
     "pipeline_id", "title", "motivos_qualificacao_sdr", "ww_closer_motivo_de_perda", "motivo_de_perda",
     "motivo_desqualifica_o_sdr", "qualificado_sql", "wt_enviado_pagamento_de_taxa",
-    "pagamento_de_taxa", "pagou_a_taxa",
+    "pagamento_de_taxa", "pagou_a_taxa", "como_conheceu_a_ww",
 ].join(",");
 
 // Wedding Pipeline IDs
@@ -97,6 +97,20 @@ function mapSql(val: any): string {
 }
 
 /**
+ * Recovers legacy orcamento values that were stored with BR formatting stripped.
+ * "R$ 50.000,00" → ingest antigo tirou dots/commas → "5000000" no banco.
+ * Se o valor cru é >= 1M e divisível por 100, divide por 100 pra recuperar o valor real.
+ * Safety net para dados legados enquanto o backfill/reprocess não roda.
+ */
+function recoverOrcamento(raw: unknown): number | null {
+    if (raw == null || raw === "") return null;
+    const n = parseFloat(String(raw));
+    if (!Number.isFinite(n)) return null;
+    if (n >= 1_000_000 && n % 100 === 0) return n / 100;
+    return n;
+}
+
+/**
  * Single source of truth: maps a Supabase row to a WonDeal object.
  * @param row Raw row from Supabase
  * @param groupIdFallback Fallback group_id when row.group_id is missing
@@ -118,7 +132,7 @@ function mapRowToWonDeal(row: any, groupIdFallback?: string, includeCf = false):
         como_foi_feita_a_1a_reuniao: mapMeetingType(row.como_reuniao_1),
         data_horario_agendamento_closer: row.data_closer || null,
         valor_fechado_em_contrato: row.valor_fechado_em_contrato ? parseFloat(row.valor_fechado_em_contrato) : null,
-        orcamento: row.orcamento ? parseFloat(row.orcamento) : null,
+        orcamento: recoverOrcamento(row.orcamento),
         num_convidados: row.num_convidados ? parseInt(row.num_convidados, 10) : null,
         cidade: row.cidade || null,
         pipeline: row.pipeline || null,
@@ -143,6 +157,7 @@ function mapRowToWonDeal(row: any, groupIdFallback?: string, includeCf = false):
         motivo_desqualificacao_sdr: row.motivo_desqualifica_o_sdr || null,
         motivo_de_perda: row.motivo_de_perda || null,
         ww_closer_motivo_de_perda: row.ww_closer_motivo_de_perda || null,
+        como_conheceu_a_ww: row.como_conheceu_a_ww != null ? String(row.como_conheceu_a_ww) : null,
         _cf: includeCf ? {
             [FQ_ID]: row.motivos_qualificacao_sdr || "",
             [FL_ID]: row.ww_closer_motivo_de_perda || row.motivo_de_perda || "",
