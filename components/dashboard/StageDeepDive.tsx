@@ -5,6 +5,7 @@ import { X } from "lucide-react";
 import { T } from "./theme";
 import { type WonDeal } from "@/lib/schemas";
 import type { StageStats } from "@/lib/metrics-jornada";
+import { useDialog } from "@/lib/useDialog";
 
 interface StageDeepDiveProps {
     isOpen: boolean;
@@ -294,8 +295,10 @@ function FieldGroup({
 }
 
 export function StageDeepDive({ isOpen, onClose, stage, stagePrev, periodoLabel, periodoAnteriorLabel }: StageDeepDiveProps) {
+    const dialogRef = useDialog({ isOpen, onClose });
     if (!isOpen || !stage) return null;
     const prevDeals = stagePrev?.deals ?? [];
+    const titleId = "deep-dive-title";
 
     return (
         <div
@@ -312,6 +315,11 @@ export function StageDeepDive({ isOpen, onClose, stage, stagePrev, periodoLabel,
             }}
         >
             <div
+                ref={dialogRef}
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby={titleId}
+                tabIndex={-1}
                 style={{
                     background: T.surface,
                     borderRadius: 12,
@@ -338,7 +346,7 @@ export function StageDeepDive({ isOpen, onClose, stage, stagePrev, periodoLabel,
                         <div style={{ fontSize: 10, color: T.gold, letterSpacing: "0.1em", textTransform: "uppercase", fontWeight: 700, marginBottom: 4 }}>
                             Deep Dive · {stage.responsavel}
                         </div>
-                        <h2 style={{ fontSize: 18, fontWeight: 700, color: T.white, margin: 0 }}>
+                        <h2 id={titleId} style={{ fontSize: 18, fontWeight: 700, color: T.white, margin: 0 }}>
                             {stage.label}
                         </h2>
                         <div style={{ fontSize: 11, color: T.muted, marginTop: 4 }}>

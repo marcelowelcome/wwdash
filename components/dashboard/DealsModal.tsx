@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useMemo } from "react";
 import { X, Download, Search } from "lucide-react";
 import { T } from "./theme";
 import { type WonDeal } from "@/lib/schemas";
+import { useDialog } from "@/lib/useDialog";
 
 type StageKey = "leads" | "mql" | "agendamento" | "reunioes" | "qualificado" | "closerAgendada" | "closerRealizada" | "vendas";
 
@@ -53,28 +54,20 @@ export function DealsModal({ isOpen, onClose, title, deals, stageKey }: DealsMod
         );
     }, [uniqueDeals, search]);
 
-    useEffect(() => {
-        const handleEscape = (e: KeyboardEvent) => {
-            if (e.key === "Escape") onClose();
-        };
+    const dialogRef = useDialog({ isOpen, onClose });
 
+    useEffect(() => {
         if (isOpen) {
-            document.addEventListener("keydown", handleEscape);
-            document.body.style.overflow = "hidden";
+            // Prefer the search input as the initial focus target
             setTimeout(() => searchRef.current?.focus(), 100);
+        } else {
+            setSearch("");
         }
-
-        return () => {
-            document.removeEventListener("keydown", handleEscape);
-            document.body.style.overflow = "unset";
-        };
-    }, [isOpen, onClose]);
-
-    useEffect(() => {
-        if (!isOpen) setSearch("");
     }, [isOpen]);
 
     if (!isOpen) return null;
+
+    const titleId = "deals-modal-title";
 
     const getStatusBadge = (status: string | undefined) => {
         const s = status || "1";
@@ -166,6 +159,11 @@ export function DealsModal({ isOpen, onClose, title, deals, stageKey }: DealsMod
             }}
         >
             <div
+                ref={dialogRef}
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby={titleId}
+                tabIndex={-1}
                 style={{
                     background: T.surface,
                     borderRadius: 12,
@@ -188,7 +186,7 @@ export function DealsModal({ isOpen, onClose, title, deals, stageKey }: DealsMod
                         borderBottom: `1px solid ${T.border}`,
                     }}
                 >
-                    <h2 style={{ fontSize: 16, fontWeight: 700, color: T.white, margin: 0 }}>
+                    <h2 id={titleId} style={{ fontSize: 16, fontWeight: 700, color: T.white, margin: 0 }}>
                         {title} ({filteredDeals.length}
                         {search ? ` de ${uniqueDeals.length}` : ""})
                     </h2>
