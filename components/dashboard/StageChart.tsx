@@ -17,6 +17,7 @@ import {
     bucketTimeSeries,
     STAGE_DEFS,
 } from "@/lib/metrics-jornada";
+import { useReducedMotion } from "@/lib/useReducedMotion";
 
 type ChartType = "linha" | "barra" | "area";
 
@@ -166,6 +167,7 @@ export function StageChart({ deals, periodo, periodoAnterior, stageRange }: Stag
     const [granularity, setGranularity] = useState<Granularity>("diaria");
     const [chartType, setChartType] = useState<ChartType>("linha");
     const [showPrev, setShowPrev] = useState(true);
+    const reducedMotion = useReducedMotion();
 
     const series = useMemo(() => bucketTimeSeries(deals, periodo, granularity), [deals, periodo, granularity]);
     const prevSeries = useMemo(() => bucketTimeSeries(deals, periodoAnterior, granularity), [deals, periodoAnterior, granularity]);
@@ -217,6 +219,7 @@ export function StageChart({ deals, periodo, periodoAnterior, stageRange }: Stag
             strokeWidth: isPrev ? 1 : 1.75,
             dot: false,
             activeDot: { r: 3 },
+            isAnimationActive: !reducedMotion,
         };
         if (chartType === "barra") return <Bar key={seriesKey} {...common} fillOpacity={isPrev ? 0.25 : 0.75} />;
         if (chartType === "area") return <Area key={seriesKey} {...common} fillOpacity={isPrev ? 0.04 : 0.14} />;

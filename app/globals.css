@@ -45,6 +45,21 @@ body {
   border-radius: 4px;
 }
 
+/* Respect prefers-reduced-motion.
+   Users who have requested reduced motion at the OS level (vestibular
+   sensitivity, migraine triggers, etc.) get near-instant transitions
+   instead of the default easing curves. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
 @keyframes spin {
   from {
     transform: rotate(0deg);
