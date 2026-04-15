@@ -7,6 +7,26 @@ export interface VersionEntry {
 
 export const VERSION_HISTORY: VersionEntry[] = [
     {
+        version: "2.6.0",
+        date: "16/04/2026",
+        description: "Nova aba Jornada do Lead — análise ponta-a-ponta do funil em 7 etapas com responsáveis, metas, comparação MoM justa e deep dive por etapa.",
+        changes: [
+            "Nova aba 'Jornada' entre Visão Geral e Funil, com 4 sub-views (Entrada e Agendamento, Reunião e Qualificação, Fechamento, Visão Completa).",
+            "Motor puro lib/metrics-jornada.ts — 7 estágios (entrada → agendou → realizou → qualificou → agCloser → realizouCloser → vendeu), modos Coorte e Evento.",
+            "Split passado/futuro para reuniões agendadas — show-up rate calcula sobre reuniões já passadas, não sobre total marcado (remove distorção causada por agendamentos futuros).",
+            "Comparação Mês-a-Mês por subtração calendárica: 01-15 abril vs 01-15 março (não janelas deslizantes), preservando o dia do mês.",
+            "MiniFunnel horizontal com 7 estágios, metas coloridas e PoP inline — dá leitura ponta-a-ponta em 3 segundos.",
+            "StageChart: time-series por sub-view com picker de até 3 métricas, granularidade diária/semanal/mensal, tipos linha/barra/área e overlay tracejado do período anterior.",
+            "StageDeepDive (modal): distribuição das respostas do lead (orçamento, convidados, destino, cidade, status do relacionamento, etc.) e decisões do SDR (qualificação, motivos de qualificação, desqualificação, perda), com taxa de preenchimento e tendência vs período anterior.",
+            "ClosingBox por sub-view: prosa contínua, diagnóstico e sugestões de ação automáticas baseadas em gap vs meta e regressões.",
+            "Toggle Narrada ⇆ Detalhada — mesma computação, apresentações diferentes para leitura executiva vs técnica.",
+            "Análise de dropout entre cada par de etapas: quantos ficaram em aberto (por stage AC) e quantos foram perdidos (por motivo), com tendência PoP.",
+            "DealsModal: linhas clicáveis abrem o deal direto no ActiveCampaign.",
+            "WonDeal schema estendido com qualificado_para_sql, motivos_qualificacao_sdr, motivo_desqualificacao_sdr, motivo_de_perda, ww_closer_motivo_de_perda.",
+            "28 novos testes Vitest para metrics-jornada (bucketing temporal, modos coorte/evento, past/future split, metas, targetRateBetween).",
+        ],
+    },
+    {
         version: "2.5.0",
         date: "18/03/2026",
         description: "Filtro de período global, cache server-side, exportação CSV e correções críticas.",

@@ -279,7 +279,7 @@ Componente React client-side que gerencia estado de loading/erro, coordena as ch
 - `lib/supabase-api.ts` — `fetchAllDealsFromDb`, `fetchFieldMetaFromDb`, `fetchStagesFromDb`
 - `lib/metrics.ts` — `computeMetrics`, `Metrics`
 - `components/dashboard/theme.ts` — `T`, `statusColor`
-- `components/dashboard/OverviewTab`, `FunnelTab`, `CloserTab`, `PipelineTab`
+- `components/dashboard/OverviewTab`, `JornadaTab`, `FunnelMetaTab`, `FunnelTab`, `SDRTab`, `CloserTab`, `PipelineTab`, `ContratosTab`, `PerfilScoreTab`, `DictionaryTab`, `ChatTab`
 
 **O que NÃO deve fazer**
 
@@ -310,10 +310,20 @@ Primitivos visuais e views de tab que renderizam os dados do `Metrics` sem conte
 | `KpiCard.tsx` | Card de KPI com barra de status, valor, subtítulo e delta |
 | `SectionTitle.tsx` | Cabeçalho de seção com badge de status colorido |
 | `CustomTooltip.tsx` | Tooltip de recharts com estilo da marca |
+| `DealsModal.tsx` | Modal de lista de deals com busca, export CSV e linhas clicáveis (abrem deal no AC) |
+| `StageChart.tsx` | Time-series por etapa: picker de métricas, granularidade (diária/semanal/mensal), tipos linha/barra/área, overlay do período anterior |
+| `StageDeepDive.tsx` | Modal de análise profunda por etapa: distribuição das respostas do lead (orçamento, destino, convidados, etc.) e decisões do SDR (qualificação, motivos) |
 | `OverviewTab.tsx` | Visão geral: KPIs, charts de volume e conversão, status grid |
+| `JornadaTab.tsx` | Jornada do Lead: 4 sub-views (Entrada e Agendamento, Reunião e Qualificação, Fechamento, Visão Completa) com MiniFunnel, toggle Coorte/Evento e Narrada/Detalhada, análise de dropout, ClosingBox com diagnóstico e sugestões |
+| `FunnelMetaTab.tsx` | Funil mensal com metas, realizado e projeção |
 | `FunnelTab.tsx` | Aba SDR: 4 KPIs, Gráfico 12 Sem. Volume/Qualificação, Funil 5 Etapas, 2 Painéis de Perda (Global vs Recente) e Tendência Taxa Mensal |
+| `SDRTab.tsx` | Visão operacional SDR por owner com métricas semanais e motivos |
 | `CloserTab.tsx` | Closer: conversão por janela, período atual, motivos de perda, cohorts |
 | `PipelineTab.tsx` | Pipeline: por estágio, por idade, projeção 7 dias |
+| `ContratosTab.tsx` | Lista de contratos ganhos com export CSV |
+| `PerfilScoreTab.tsx` | Perfil e score do lead baseado em sinais SDR/Closer |
+| `DictionaryTab.tsx` | Dicionário de métricas (consome `lib/metrics-definitions.ts`) |
+| `ChatTab.tsx` | Chat IA (GPT-4o via `/api/chat`) com contexto da aba ativa |
 
 **Inputs esperados**
 
@@ -372,7 +382,60 @@ Primitivos visuais e views de tab que renderizam os dados do `Metrics` sem conte
  ---
   ---
   
-  ## 10. Metrics Dictionary — `lib/metrics-definitions.ts`
+  ## 11. Jornada Engine — `lib/metrics-jornada.ts`
+ 
+ **Propósito**
+ Motor puro para a aba Jornada do Lead. Transforma `WonDeal[]` em estatísticas por 7 etapas
+ do funil (entrada → agendou → realizou → qualificou → agCloser → realizouCloser → vendeu),
+ com modos Coorte e Evento, split passado/futuro para agendamentos, e comparação fair (mês
+ calendário, não janela deslizante) com o período anterior.
+ 
+ **Arquivos do módulo**
+ 
+ - `lib/metrics-jornada.ts`
+ - `lib/__tests__/metrics-jornada.test.ts` (28 testes)
+ - `components/dashboard/JornadaTab.tsx` (consumer)
+ - `components/dashboard/StageChart.tsx` (consumer — usa `bucketTimeSeries()`)
+ - `components/dashboard/StageDeepDive.tsx` (consumer)
+ 
+ **Funções públicas principais**
+ 
+ - `computeJornada(deals, periodo, mode, today?) → JornadaResult` — roda o funil completo
+ - `computeDropout(fromStage, toStage) → DropoutAnalysis` — leads que não avançaram, por stage/status/motivo
+ - `bucketTimeSeries(deals, periodo, granularity) → TimeSeries` — série temporal por etapa
+ - `previousPeriod(periodo) → JornadaPeriod` — subtração calendárica de 1 mês, preservando o dia
+ - `targetRateBetween(stages, from, to) → number | null` — produto das metas entre etapas
+ - `sliceStages(stages, range) → StageStats[]` — recorta estágios por sub-view
+ 
+ **Inputs esperados**
+ 
+ - `deals: WonDeal[]` (já filtrado por pipeline WW e Elopement excluído pelo consumer)
+ - `periodo: { from: Date, to: Date, label: string }` (half-open [from, to))
+ - `mode: "coorte" | "evento"` — coorte conta leads criados no período; evento conta eventos que aconteceram no período
+ - `today?: Date` — ponto de referência para split passado/futuro; útil para testes determinísticos
+ 
+ **Outputs esperados**
+ 
+ - `JornadaResult` com `periodo`, `mode`, `stages: StageStats[]`
+ - Cada `StageStats` tem `count`, `rateFromPrev`, `meta`, `metaStatus`, `deals`, e opcionalmente `pastCount`/`futureCount` (apenas para estágios com timing — agendou, agCloser)
+ 
+ **Decisões técnicas já tomadas**
+ 
+ - Show-up rates (realizou, realizouCloser) são calculadas sobre `pastCount` da etapa anterior, não sobre o total — evita penalizar reuniões futuras agendadas como se fossem no-show
+ - Modo Evento usa a data específica de cada etapa (`data_reuniao_1`, `data_qualificado`, etc.), definida em `STAGE_EVENT_DATE`
+ - `previousPeriod()` subtrai 1 mês calendário, não o span em dias (01-15 abril → 01-15 março)
+ - `computeDropout()` lê motivos em ordem: `motivo_desqualificacao_sdr` → `motivo_de_perda` → `ww_closer_motivo_de_perda`
+ - `bucketTimeSeries()` usa ISO week (segunda) para granularidade semanal; primeiro dia do mês para mensal
+ 
+ **O que NÃO deve fazer**
+ 
+ - ❌ Fetch ou side effects — puro
+ - ❌ Conhecer conceitos de UI (cores, componentes)
+ - ❌ Usar `new Date()` sem parâmetro em código de cálculo (passar `today` explicitamente)
+ 
+ ---
+ 
+ ## 10. Metrics Dictionary — `lib/metrics-definitions.ts`
   
   **Propósito**
   Centralizar o conhecimento de negócio sobre o que cada métrica representa, qual sua origem técnica e como é calculada.

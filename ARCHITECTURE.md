@@ -16,6 +16,10 @@ Async functions (`fetchAllDealsFromDb`, `fetchFieldMetaFromDb`, `fetchStagesFrom
 
 Pure function `computeMetrics()` that receives typed deal arrays and returns all KPIs (SDR volume, qualification rate, conversion, velocity, pipeline health, cohorts, loss reasons). Has zero side effects.
 
+### Jornada Engine — `lib/metrics-jornada.ts`
+
+Pure function `computeJornada()` that transforms `WonDeal[]` into stats por 7 etapas do funil (entrada → agendou → realizou → qualificou → agCloser → realizouCloser → vendeu), com modos Coorte e Evento, split passado/futuro para estágios de agendamento, e comparação por período anterior via subtração calendárica. Inclui helpers `computeDropout()`, `bucketTimeSeries()`, `targetRateBetween()`, `previousPeriod()`. Zero side effects.
+
 ### Utilities — `lib/utils.ts`
 
 Date helpers (`parseDate`, `weekKey`, `inRange`, `daysAgo`, `daysSince`) and the `cn()` class-merging utility used across components.
@@ -37,15 +41,25 @@ Centralised colour palette (`T`) and `statusColor()` / `statusIcon()` helpers. S
 | `KpiCard.tsx` | Renders a single KPI tile with status colour, value, and delta |
 | `SectionTitle.tsx` | Section heading with optional colour-coded status badge |
 | `CustomTooltip.tsx` | Recharts tooltip with branded styling |
+| `DealsModal.tsx` | Lista filtrável/searchable de deals com export CSV; linhas clicáveis abrem o deal no ActiveCampaign |
+| `StageChart.tsx` | Time-series por etapa com picker de métrica, granularidade e overlay do período anterior |
+| `StageDeepDive.tsx` | Modal de análise profunda por etapa: respostas do lead e decisões do SDR |
 
 ### UI — Tab Views
 
 | File | Responsibility |
 |---|---|
 | `OverviewTab.tsx` | KPI row + SDR/Conversion charts + consolidated status grid |
+| `JornadaTab.tsx` | Jornada do Lead: 4 sub-views (Entrada e Agendamento, Reunião e Qualificação, Fechamento, Visão Completa). Inclui MiniFunnel horizontal com 7 etapas, toggle Coorte/Evento, toggle Narrada/Detalhada, StageChart por sub-view, análise de dropout entre etapas e ClosingBox com diagnóstico e sugestões |
+| `FunnelMetaTab.tsx` | Funil mensal com metas, realizado e projeção |
 | `FunnelTab.tsx` | Aba SDR: 4 KPIs sincronizados, Gráfico 12 Sem. Volume/Qualificação, Funil da última semana completa, Distribuição de Fontes, Motivos de Perda e Tendência Taxa Mensal |
+| `SDRTab.tsx` | Visão operacional SDR por ownerId com métricas semanais e motivos |
 | `CloserTab.tsx` | 4-week conversion windows, period breakdown, loss reasons, cohort analysis |
 | `PipelineTab.tsx` | Pipeline by stage, by age, and 7-day projection |
+| `ContratosTab.tsx` | Lista de contratos ganhos com export CSV |
+| `PerfilScoreTab.tsx` | Perfil do lead e score baseado em sinais SDR/Closer |
+| `DictionaryTab.tsx` | Dicionário de métricas (do `lib/metrics-definitions.ts`) |
+| `ChatTab.tsx` | Chat IA (GPT-4o) com contexto da aba ativa |
 
 ### UI — Orchestrator — `components/Dashboard.tsx`
 
@@ -67,10 +81,11 @@ Browser
           ├── lib/supabase-api.ts  ──► Supabase (PostgreSQL)
           │
           ├── lib/metrics.ts  ──► computeMetrics()  (pure, synchronous)
+          ├── lib/metrics-jornada.ts  ──► computeJornada()  (pure — 7-stage funnel, dropouts, time series)
           │
-          └── Tab Components (OverviewTab / FunnelTab / CloserTab / PipelineTab)
+          └── Tab Components (OverviewTab / JornadaTab / FunnelMetaTab / FunnelTab / SDRTab / CloserTab / PipelineTab / ContratosTab / PerfilScoreTab / DictionaryTab / ChatTab)
                   │
-                  └── Shared UI (KpiCard, SectionTitle, CustomTooltip, theme)
+                  └── Shared UI (KpiCard, SectionTitle, CustomTooltip, DealsModal, StageChart, StageDeepDive, theme)
 ```
 
 **Communication patterns:**
