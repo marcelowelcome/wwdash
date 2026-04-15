@@ -262,13 +262,13 @@ export function DealsModal({ isOpen, onClose, title, deals, stageKey }: DealsMod
                     <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
                         <thead>
                             <tr>
-                                <th style={{ ...thStyle }}>ID</th>
-                                <th style={{ ...thStyle }}>Pipeline</th>
-                                <th style={{ ...thStyle }}>Stage</th>
-                                <th style={{ ...thStyle }}>Status</th>
-                                <th style={{ ...thStyle }}>Criado</th>
+                                <th scope="col" style={{ ...thStyle }}>ID</th>
+                                <th scope="col" style={{ ...thStyle }}>Pipeline</th>
+                                <th scope="col" style={{ ...thStyle }}>Stage</th>
+                                <th scope="col" style={{ ...thStyle }}>Status</th>
+                                <th scope="col" style={{ ...thStyle }}>Criado</th>
                                 {extraColumns.map((col, i) => (
-                                    <th key={i} style={{ ...thStyle, color: T.gold }}>
+                                    <th key={i} scope="col" style={{ ...thStyle, color: T.gold }}>
                                         {col.header}
                                     </th>
                                 ))}

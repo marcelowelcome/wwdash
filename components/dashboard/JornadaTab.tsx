@@ -1094,13 +1094,15 @@ function StageList({
 
 function SubViewNav({ active, onChange }: { active: SubView; onChange: (v: SubView) => void }) {
     return (
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
+        <nav aria-label="Sub-views da Jornada" style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
             {SUBVIEWS.map((v) => {
                 const isActive = v.id === active;
                 return (
                     <button
                         key={v.id}
                         onClick={() => onChange(v.id)}
+                        aria-current={isActive ? "page" : undefined}
+                        aria-pressed={isActive}
                         style={{
                             background: isActive ? T.berry : "transparent",
                             border: `1px solid ${isActive ? T.berry : T.border}`,
@@ -1118,7 +1120,7 @@ function SubViewNav({ active, onChange }: { active: SubView; onChange: (v: SubVi
                     </button>
                 );
             })}
-        </div>
+        </nav>
     );
 }
 
@@ -1134,6 +1136,7 @@ function ModeToggle({ mode, onChange }: { mode: JornadaMode; onChange: (m: Jorna
                     <button
                         key={o.id}
                         onClick={() => onChange(o.id)}
+                        aria-pressed={mode === o.id}
                         title={o.help}
                         style={{
                             background: mode === o.id ? T.gold : "transparent",
@@ -1193,6 +1196,7 @@ function PeriodPicker({
                     <button
                         key={p.id}
                         onClick={() => onChange(p.id)}
+                        aria-pressed={preset === p.id}
                         style={{
                             background: preset === p.id ? T.surface : "transparent",
                             color: preset === p.id ? T.white : T.muted,
@@ -1651,6 +1655,7 @@ export function JornadaTab({ allDeals }: JornadaTabProps) {
                         <button
                             key={d}
                             onClick={() => setDisplay(d)}
+                            aria-pressed={display === d}
                             style={{
                                 background: display === d ? T.surface : "transparent",
                                 color: display === d ? T.white : T.muted,
