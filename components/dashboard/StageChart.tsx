@@ -123,7 +123,8 @@ function PillGroup<T extends string>({
                     onClick={() => onChange(o.id)}
                     style={{
                         ...(value === o.id ? PILL_ACTIVE : PILL_INACTIVE),
-                        padding: "6px 12px",
+                        padding: "9px 14px",
+                        minHeight: 36,
                         fontSize: 11,
                         fontWeight: 600,
                         cursor: "pointer",
@@ -248,7 +249,8 @@ export function StageChart({ deals, periodo, periodoAnterior, stageRange }: Stag
                                 color: on ? m.color : (disabled ? T.border : T.muted),
                                 border: `1px solid ${on ? m.color : T.border}`,
                                 borderRadius: 6,
-                                padding: "6px 12px",
+                                padding: "9px 14px",
+                                minHeight: 36,
                                 fontSize: 11,
                                 fontWeight: 600,
                                 fontFamily: "inherit",

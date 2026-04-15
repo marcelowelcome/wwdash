@@ -159,21 +159,36 @@ function StageCard({
     const compRate = comparison?.rateFromPrev ?? null;
     const deltaCount = comparison ? stage.count - comparison.count : null;
 
+    const interactive = stage.count > 0;
+    const handleActivate = () => { if (interactive) onOpenModal(stage); };
+
     return (
         <div
             onMouseEnter={() => setHover(true)}
             onMouseLeave={() => setHover(false)}
-            onClick={() => stage.count > 0 && onOpenModal(stage)}
+            onFocus={() => setHover(true)}
+            onBlur={() => setHover(false)}
+            onClick={handleActivate}
+            onKeyDown={(e) => {
+                if (!interactive) return;
+                if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    handleActivate();
+                }
+            }}
+            role={interactive ? "button" : undefined}
+            tabIndex={interactive ? 0 : undefined}
+            aria-label={interactive ? `Ver deals: ${stage.label}, ${stage.count} registros` : undefined}
             style={{
                 background: T.card,
-                border: `1px solid ${hover && stage.count > 0 ? T.gold : T.border}`,
+                border: `1px solid ${hover && interactive ? T.gold : T.border}`,
                 borderRadius: 12,
                 padding: "20px 24px",
                 display: "grid",
                 gridTemplateColumns: "1fr auto",
                 gap: 24,
                 alignItems: "center",
-                cursor: stage.count > 0 ? "pointer" : "default",
+                cursor: interactive ? "pointer" : "default",
                 position: "relative",
                 transition: "border-color 0.15s ease",
             }}
@@ -309,7 +324,8 @@ function StageCard({
                             fontWeight: 600,
                             letterSpacing: "0.06em",
                             textTransform: "uppercase",
-                            padding: "5px 10px",
+                            padding: "8px 14px",
+                            minHeight: 32,
                             borderRadius: 6,
                             cursor: "pointer",
                             fontFamily: "inherit",
@@ -1125,7 +1141,8 @@ function ModeToggle({ mode, onChange }: { mode: JornadaMode; onChange: (m: Jorna
                             border: `1px solid ${T.border}`,
                             borderRight: i === 0 ? "none" : `1px solid ${T.border}`,
                             borderRadius: i === 0 ? "6px 0 0 6px" : "0 6px 6px 0",
-                            padding: "6px 14px",
+                            padding: "9px 16px",
+                            minHeight: 36,
                             fontSize: 11,
                             fontWeight: 700,
                             cursor: "pointer",
@@ -1187,7 +1204,8 @@ function PeriodPicker({
                                     : i === PERIOD_PRESETS.length - 1
                                         ? "0 6px 6px 0"
                                         : "0",
-                            padding: "8px 14px",
+                            padding: "10px 16px",
+                            minHeight: 38,
                             fontSize: 12,
                             fontWeight: 600,
                             cursor: "pointer",
@@ -1639,7 +1657,8 @@ export function JornadaTab({ allDeals }: JornadaTabProps) {
                                 border: `1px solid ${T.border}`,
                                 borderLeft: i === 0 ? `1px solid ${T.border}` : "none",
                                 borderRadius: i === 0 ? "6px 0 0 6px" : "0 6px 6px 0",
-                                padding: "6px 14px",
+                                padding: "9px 16px",
+                                minHeight: 36,
                                 fontSize: 11,
                                 fontWeight: 600,
                                 cursor: "pointer",
