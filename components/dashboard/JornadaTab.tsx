@@ -87,6 +87,13 @@ const STATUS_LABEL: Record<string, string> = {
     below: "abaixo da meta",
 };
 
+// Distinct glyphs so status is distinguishable without relying on color alone
+const STATUS_GLYPH: Record<string, string> = {
+    above: "●",
+    within: "◐",
+    below: "○",
+};
+
 const fmtNumber = (n: number) => new Intl.NumberFormat("pt-BR").format(n);
 const fmtRate = (r: number | null) => (r == null ? "—" : `${r.toFixed(1)}%`);
 
@@ -1280,10 +1287,15 @@ function MiniFunnel({
                                         color: T.muted,
                                     }}
                                 >
-                                    <div style={{ fontSize: 11, color: rateColor, fontFamily: "monospace", fontWeight: 700 }}>
+                                    <div style={{ fontSize: 11, color: rateColor, fontFamily: "monospace", fontWeight: 700, display: "flex", alignItems: "baseline", gap: 3 }}>
+                                        {status && (
+                                            <span aria-hidden="true" style={{ fontSize: 9 }}>
+                                                {STATUS_GLYPH[status]}
+                                            </span>
+                                        )}
                                         {rate != null ? `${rate.toFixed(1)}%` : "—"}
                                     </div>
-                                    <div style={{ fontSize: 14, color: T.border, lineHeight: 0.5, marginTop: 2 }}>
+                                    <div aria-hidden="true" style={{ fontSize: 14, color: T.border, lineHeight: 0.5, marginTop: 2 }}>
                                         ▸
                                     </div>
                                 </div>

@@ -33,11 +33,16 @@ interface MetricOption {
     id: string;
     label: string;
     color: string;
+    strokePattern: string;
     isRate: boolean;
     getValue: (stageCounts: Record<StageKey, number>, prevStageCounts?: Record<StageKey, number>) => number | null;
 }
 
 const COLOR_POOL = ["#7AB8FF", "#D4A35A", "#C2758A", "#3DBF8A", "#E08C3A", "#E05252", "#9F7AEA"];
+
+// Distinct stroke patterns per metric so series remain distinguishable
+// even without color (colorblind users, print). Applied by index.
+const STROKE_PATTERN_POOL = ["0", "6 3", "2 3", "8 3 2 3", "4 2 1 2", "10 3 1 3"];
 
 function stageLabel(key: StageKey): string {
     return STAGE_DEFS.find((s) => s.key === key)?.label ?? key;
@@ -56,6 +61,7 @@ function buildMetrics(stageRange: [StageKey, StageKey]): MetricOption[] {
             id: `count:${k}`,
             label: stageLabel(k),
             color: COLOR_POOL[i % COLOR_POOL.length],
+            strokePattern: STROKE_PATTERN_POOL[i % STROKE_PATTERN_POOL.length],
             isRate: false,
             getValue: (counts) => counts[k],
         });
@@ -64,10 +70,12 @@ function buildMetrics(stageRange: [StageKey, StageKey]): MetricOption[] {
     for (let i = 1; i < keys.length; i++) {
         const prev = keys[i - 1];
         const cur = keys[i];
+        const idx = keys.length + i;
         metrics.push({
             id: `rate:${prev}→${cur}`,
             label: `Taxa ${stageLabel(prev)} → ${stageLabel(cur)}`,
-            color: COLOR_POOL[(keys.length + i) % COLOR_POOL.length],
+            color: COLOR_POOL[idx % COLOR_POOL.length],
+            strokePattern: STROKE_PATTERN_POOL[idx % STROKE_PATTERN_POOL.length],
             isRate: true,
             getValue: (counts) => {
                 const p = counts[prev];
@@ -195,15 +203,18 @@ export function StageChart({ deals, periodo, periodoAnterior, stageRange }: Stag
         const seriesKey = isPrev ? `prev:${m.id}` : m.id;
         const name = isPrev ? `${m.label} (período anterior)` : m.label;
         const stroke = m.color;
+        // Previous period always uses a sparse dashed pattern; current uses the
+        // per-metric pattern. So shape + color distinguishes every series.
+        const dashArray = isPrev ? "3 3" : (m.strokePattern === "0" ? undefined : m.strokePattern);
         const common: any = {
             dataKey: seriesKey,
             name,
             stroke,
             fill: stroke,
             yAxisId: m.isRate ? "right" : "left",
-            strokeDasharray: isPrev ? "3 3" : undefined,
+            strokeDasharray: dashArray,
             opacity: isPrev ? 0.45 : 1,
-            strokeWidth: isPrev ? 1 : 1.5,
+            strokeWidth: isPrev ? 1 : 1.75,
             dot: false,
             activeDot: { r: 3 },
         };
@@ -228,19 +239,32 @@ export function StageChart({ deals, periodo, periodoAnterior, stageRange }: Stag
                             key={m.id}
                             onClick={() => toggleMetric(m.id)}
                             disabled={disabled}
+                            aria-pressed={on}
                             style={{
                                 background: on ? `${m.color}22` : "transparent",
                                 color: on ? m.color : (disabled ? T.border : T.muted),
                                 border: `1px solid ${on ? m.color : T.border}`,
                                 borderRadius: 6,
-                                padding: "5px 12px",
+                                padding: "6px 12px",
                                 fontSize: 11,
                                 fontWeight: 600,
                                 fontFamily: "inherit",
                                 cursor: disabled ? "not-allowed" : "pointer",
                                 opacity: disabled ? 0.5 : 1,
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: 8,
                             }}
                         >
+                            {/* Pattern swatch — matches the stroke used in the chart for this metric */}
+                            <svg width="18" height="6" aria-hidden="true" style={{ flexShrink: 0 }}>
+                                <line
+                                    x1="0" y1="3" x2="18" y2="3"
+                                    stroke={on ? m.color : T.muted}
+                                    strokeWidth="1.75"
+                                    strokeDasharray={m.strokePattern === "0" ? undefined : m.strokePattern}
+                                />
+                            </svg>
                             {on ? "✓ " : ""}{m.label}
                             {m.isRate ? " %" : ""}
                         </button>
