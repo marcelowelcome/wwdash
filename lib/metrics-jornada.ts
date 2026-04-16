@@ -35,6 +35,8 @@ export interface StageStats {
     futureCount?: number;
     /** For show-up stages: the denominator used for rateFromPrev (overrides prev.count — e.g. uses only past meetings). */
     denominatorLabel?: string;
+    /** Average days leads take to reach this stage from the previous one. */
+    avgDaysFromPrev?: number;
 }
 
 export interface JornadaPeriod {
@@ -202,6 +204,38 @@ export function computeJornada(
         if (cur.rateFromPrev != null && cur.meta != null) {
             cur.metaStatus = metaStatus(cur.rateFromPrev, cur.meta);
         }
+    }
+
+    // Compute average days from previous stage
+    const STAGE_DATE: Record<StageKey, keyof WonDeal> = {
+        entrada: "cdate",
+        agendou: "data_reuniao_1",
+        realizou: "data_reuniao_1",
+        qualificou: "data_qualificado",
+        agCloser: "data_horario_agendamento_closer",
+        realizouCloser: "data_horario_agendamento_closer",
+        vendeu: "data_fechamento",
+    };
+    for (let i = 1; i < stages.length; i++) {
+        const prev = stages[i - 1];
+        const cur = stages[i];
+        const prevField = STAGE_DATE[prev.key];
+        const curField = STAGE_DATE[cur.key];
+        if (prevField === curField) continue; // same date (e.g. agendou→realizou)
+        let sum = 0;
+        let n = 0;
+        for (const d of cur.deals) {
+            const pv = d[prevField];
+            const cv = d[curField];
+            if (typeof pv !== "string" || typeof cv !== "string" || !pv || !cv) continue;
+            const pt = new Date(pv).getTime();
+            const ct = new Date(cv).getTime();
+            if (Number.isNaN(pt) || Number.isNaN(ct) || ct < pt) continue;
+            const days = (ct - pt) / (24 * 60 * 60 * 1000);
+            sum += days;
+            n++;
+        }
+        if (n > 0) cur.avgDaysFromPrev = sum / n;
     }
 
     return { periodo, mode, stages };
@@ -505,6 +539,34 @@ export function sliceStages(stages: StageStats[], range: [StageKey, StageKey]): 
  * Target conversion rate between two stages — product of individual stage metas.
  * Example: MKT→SDR handoff with meta 45% gives 45; SDR→Closer with metas 65·50·80 gives ~26%.
  */
+/** Map from Jornada StageKey to DealsModal StageKey. */
+export const JORNADA_TO_MODAL_STAGE: Record<StageKey, string> = {
+    entrada: "leads",
+    agendou: "agendamento",
+    realizou: "reunioes",
+    qualificou: "qualificado",
+    agCloser: "closerAgendada",
+    realizouCloser: "closerRealizada",
+    vendeu: "vendas",
+};
+
+/** Compute lead lifetime in days (from cdate to today). */
+export function leadLifetimeDays(deal: WonDeal, today: Date = new Date()): number | null {
+    if (!deal.cdate) return null;
+    const ct = new Date(deal.cdate).getTime();
+    if (Number.isNaN(ct)) return null;
+    return (today.getTime() - ct) / (24 * 60 * 60 * 1000);
+}
+
+/** Human-readable duration string. */
+export function formatDaysDuration(days: number): string {
+    if (days < 1) return "< 1 dia";
+    if (days < 30) return `${Math.round(days)} dia${Math.round(days) === 1 ? "" : "s"}`;
+    const months = days / 30;
+    if (months < 12) return `${months.toFixed(1)} meses`;
+    return `${(days / 365).toFixed(1)} anos`;
+}
+
 export function targetRateBetween(
     stages: StageStats[],
     from: StageKey,

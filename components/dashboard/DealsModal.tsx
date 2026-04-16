@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useRef, useState, useMemo } from "react";
-import { X, Download, Search } from "lucide-react";
+import { X, Download, Search, ChevronDown, ChevronRight } from "lucide-react";
 import { T } from "./theme";
 import { type WonDeal } from "@/lib/schemas";
 import { useDialog } from "@/lib/useDialog";
+import { leadLifetimeDays, formatDaysDuration } from "@/lib/metrics-jornada";
 
 type StageKey = "leads" | "mql" | "agendamento" | "reunioes" | "qualificado" | "closerAgendada" | "closerRealizada" | "vendas";
 
@@ -27,9 +28,223 @@ const formatDateTime = (dateStr: string | null | undefined) => {
     return `${date.toLocaleDateString("pt-BR")} ${date.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`;
 };
 
+const fmtNumber = (n: number) => new Intl.NumberFormat("pt-BR").format(n);
+
+function formatOrcamento(v: number | string | null | undefined): string {
+    if (v == null || v === "") return "—";
+    if (typeof v === "string") return v;
+    return `R$ ${fmtNumber(v)}`;
+}
+
+function formatConvidados(v: number | string | null | undefined): string {
+    if (v == null || v === "") return "—";
+    return String(v);
+}
+
+// ─── EXECUTIVE SUMMARY ──────────────────────────────────────────────────────
+
+interface SummaryData {
+    total: number;
+    won: number;
+    open: number;
+    lost: number;
+    avgLifetimeDays: number | null;
+    topDestinos: { label: string; count: number }[];
+    topOrcamentos: { label: string; count: number }[];
+    topConvidados: { label: string; count: number }[];
+}
+
+function computeSummary(deals: WonDeal[]): SummaryData {
+    let won = 0, open = 0, lost = 0;
+    let lifeSum = 0, lifeN = 0;
+    const destMap = new Map<string, number>();
+    const orcMap = new Map<string, number>();
+    const convMap = new Map<string, number>();
+
+    for (const d of deals) {
+        if (d.data_fechamento) won++;
+        else if (d.status === "2") lost++;
+        else open++;
+
+        const life = leadLifetimeDays(d);
+        if (life != null) { lifeSum += life; lifeN++; }
+
+        if (d.destino) destMap.set(d.destino, (destMap.get(d.destino) ?? 0) + 1);
+
+        const orc = d.orcamento != null ? String(d.orcamento) : null;
+        if (orc) orcMap.set(orc, (orcMap.get(orc) ?? 0) + 1);
+
+        const conv = d.num_convidados != null ? String(d.num_convidados) : null;
+        if (conv) convMap.set(conv, (convMap.get(conv) ?? 0) + 1);
+    }
+
+    const toTop = (m: Map<string, number>, max = 5) =>
+        [...m.entries()].map(([label, count]) => ({ label, count })).sort((a, b) => b.count - a.count).slice(0, max);
+
+    return {
+        total: deals.length,
+        won, open, lost,
+        avgLifetimeDays: lifeN > 0 ? lifeSum / lifeN : null,
+        topDestinos: toTop(destMap),
+        topOrcamentos: toTop(orcMap),
+        topConvidados: toTop(convMap),
+    };
+}
+
+function MiniBar({ items, total, color }: { items: { label: string; count: number }[]; total: number; color: string }) {
+    if (items.length === 0) return <span style={{ color: T.muted, fontSize: 10, fontStyle: "italic" }}>sem dados</span>;
+    return (
+        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            {items.map((it) => {
+                const pct = total > 0 ? (it.count / total) * 100 : 0;
+                return (
+                    <div key={it.label} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11 }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{
+                                height: 6,
+                                borderRadius: 3,
+                                background: T.border,
+                                overflow: "hidden",
+                            }}>
+                                <div style={{
+                                    height: "100%",
+                                    width: `${Math.max(pct, 2)}%`,
+                                    background: color,
+                                    borderRadius: 3,
+                                    transition: "width 0.3s ease",
+                                }} />
+                            </div>
+                        </div>
+                        <span style={{ color: T.cream, fontFamily: "monospace", minWidth: 24, textAlign: "right" }}>{it.count}</span>
+                        <span style={{ color: T.muted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 120 }}>{it.label}</span>
+                    </div>
+                );
+            })}
+        </div>
+    );
+}
+
+function ExecutiveSummary({ deals }: { deals: WonDeal[] }) {
+    const s = useMemo(() => computeSummary(deals), [deals]);
+    if (s.total === 0) return null;
+
+    const statusItems = [
+        { label: "Won", count: s.won, color: T.green },
+        { label: "Open", count: s.open, color: T.gold },
+        { label: "Lost", count: s.lost, color: T.red },
+    ];
+
+    return (
+        <div style={{
+            padding: "16px 20px",
+            borderBottom: `1px solid ${T.border}`,
+        }}>
+            <div style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+                gap: 16,
+            }}>
+                {/* Status distribution */}
+                <div style={{ background: T.card, borderRadius: 10, padding: "14px 16px" }}>
+                    <div style={{ fontSize: 10, color: T.muted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 10, fontWeight: 600 }}>
+                        Status
+                    </div>
+                    {/* Stacked bar */}
+                    <div style={{ display: "flex", height: 8, borderRadius: 4, overflow: "hidden", marginBottom: 10, background: T.border }}>
+                        {statusItems.map((si) => {
+                            const pct = s.total > 0 ? (si.count / s.total) * 100 : 0;
+                            if (pct === 0) return null;
+                            return <div key={si.label} style={{ width: `${pct}%`, background: si.color, transition: "width 0.3s ease" }} />;
+                        })}
+                    </div>
+                    <div style={{ display: "flex", gap: 12 }}>
+                        {statusItems.map((si) => (
+                            <div key={si.label} style={{ fontSize: 11, display: "flex", alignItems: "center", gap: 4 }}>
+                                <span style={{ width: 6, height: 6, borderRadius: 2, background: si.color, display: "inline-block" }} />
+                                <span style={{ color: T.cream, fontFamily: "monospace", fontWeight: 600 }}>{si.count}</span>
+                                <span style={{ color: T.muted }}>{si.label}</span>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+
+                {/* Avg Lifetime */}
+                <div style={{ background: T.card, borderRadius: 10, padding: "14px 16px" }}>
+                    <div style={{ fontSize: 10, color: T.muted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 10, fontWeight: 600 }}>
+                        Tempo médio de vida
+                    </div>
+                    <div style={{ fontSize: 22, color: T.white, fontWeight: 700, fontFamily: "monospace" }}>
+                        {s.avgLifetimeDays != null ? formatDaysDuration(s.avgLifetimeDays) : "—"}
+                    </div>
+                </div>
+
+                {/* Top Destinos */}
+                <div style={{ background: T.card, borderRadius: 10, padding: "14px 16px" }}>
+                    <div style={{ fontSize: 10, color: T.muted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 10, fontWeight: 600 }}>
+                        Top destinos
+                    </div>
+                    <MiniBar items={s.topDestinos} total={s.total} color={T.berry} />
+                </div>
+
+                {/* Top Orcamento */}
+                <div style={{ background: T.card, borderRadius: 10, padding: "14px 16px" }}>
+                    <div style={{ fontSize: 10, color: T.muted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 10, fontWeight: 600 }}>
+                        Faixa de orçamento
+                    </div>
+                    <MiniBar items={s.topOrcamentos} total={s.total} color={T.gold} />
+                </div>
+            </div>
+        </div>
+    );
+}
+
+// ─── EXPANDED ROW ────────────────────────────────────────────────────────────
+
+function DealExpandedRow({ deal }: { deal: WonDeal }) {
+    const lifetime = leadLifetimeDays(deal);
+    const fields: { label: string; value: string }[] = [
+        { label: "ID", value: deal.id },
+        { label: "Pipeline", value: deal.pipeline || "—" },
+        { label: "Stage", value: deal.stage || "—" },
+        { label: "Status", value: deal.data_fechamento ? "Won" : deal.status === "2" ? "Lost" : "Open" },
+        { label: "Tempo de vida", value: lifetime != null ? formatDaysDuration(lifetime) : "—" },
+        { label: "Destino desejado", value: deal.destino || "—" },
+        { label: "Orçamento", value: formatOrcamento(deal.orcamento) },
+        { label: "Nº convidados", value: formatConvidados(deal.num_convidados) },
+    ];
+
+    return (
+        <tr>
+            <td colSpan={100} style={{ padding: 0, borderBottom: `1px solid ${T.border}` }}>
+                <div style={{
+                    background: `${T.card}80`,
+                    padding: "12px 16px 12px 40px",
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))",
+                    gap: "8px 24px",
+                }}>
+                    {fields.map((f) => (
+                        <div key={f.label}>
+                            <div style={{ fontSize: 9, color: T.muted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 2 }}>
+                                {f.label}
+                            </div>
+                            <div style={{ fontSize: 12, color: T.cream, fontWeight: 500 }}>
+                                {f.value}
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            </td>
+        </tr>
+    );
+}
+
+// ─── MAIN MODAL ──────────────────────────────────────────────────────────────
+
 export function DealsModal({ isOpen, onClose, title, deals, stageKey }: DealsModalProps) {
     const searchRef = useRef<HTMLInputElement>(null);
     const [search, setSearch] = useState("");
+    const [expandedId, setExpandedId] = useState<string | null>(null);
 
     // Deduplicate deals by ID
     const uniqueDeals = useMemo(() => {
@@ -58,10 +273,10 @@ export function DealsModal({ isOpen, onClose, title, deals, stageKey }: DealsMod
 
     useEffect(() => {
         if (isOpen) {
-            // Prefer the search input as the initial focus target
             setTimeout(() => searchRef.current?.focus(), 100);
         } else {
             setSearch("");
+            setExpandedId(null);
         }
     }, [isOpen]);
 
@@ -69,25 +284,23 @@ export function DealsModal({ isOpen, onClose, title, deals, stageKey }: DealsMod
 
     const titleId = "deals-modal-title";
 
-    const getStatusBadge = (status: string | undefined) => {
-        const s = status || "1";
-        const map: Record<string, { label: string; color: string; bg: string }> = {
-            "0": { label: "Won", color: T.green, bg: `${T.green}20` },
-            "1": { label: "Open", color: T.gold, bg: `${T.gold}20` },
-            "2": { label: "Lost", color: T.red, bg: `${T.red}20` },
-        };
-        const config = map[s] || map["1"];
+    const getStatusBadge = (deal: WonDeal) => {
+        const isWon = !!deal.data_fechamento;
+        const isLost = !isWon && deal.status === "2";
+        const config = isWon
+            ? { label: "Won", color: T.green, bg: `${T.green}20` }
+            : isLost
+                ? { label: "Lost", color: T.red, bg: `${T.red}20` }
+                : { label: "Open", color: T.gold, bg: `${T.gold}20` };
         return (
-            <span
-                style={{
-                    padding: "2px 8px",
-                    borderRadius: 4,
-                    fontSize: 10,
-                    fontWeight: 600,
-                    color: config.color,
-                    background: config.bg,
-                }}
-            >
+            <span style={{
+                padding: "2px 8px",
+                borderRadius: 4,
+                fontSize: 10,
+                fontWeight: 600,
+                color: config.color,
+                background: config.bg,
+            }}>
                 {config.label}
             </span>
         );
@@ -119,19 +332,25 @@ export function DealsModal({ isOpen, onClose, title, deals, stageKey }: DealsMod
     const extraColumns = getExtraColumns();
 
     const exportToCSV = () => {
-        const baseHeaders = ["ID", "Pipeline", "Stage", "Status", "Criado"];
+        const baseHeaders = ["ID", "Pipeline", "Stage", "Status", "Criado", "Tempo de Vida (dias)", "Destino", "Orcamento", "Convidados"];
         const extraHeaders = extraColumns.map((c) => c.header);
-        const headers = [...baseHeaders, ...extraHeaders, "Destino"];
+        const headers = [...baseHeaders, ...extraHeaders];
 
-        const rows = filteredDeals.map((d) => [
-            d.id,
-            d.pipeline || "",
-            d.stage || "",
-            d.status === "0" ? "Won" : d.status === "2" ? "Lost" : "Open",
-            d.cdate ? new Date(d.cdate).toLocaleDateString("pt-BR") : "",
-            ...extraColumns.map((c) => c.getValue(d)),
-            d.destino || "",
-        ]);
+        const rows = filteredDeals.map((d) => {
+            const life = leadLifetimeDays(d);
+            return [
+                d.id,
+                d.pipeline || "",
+                d.stage || "",
+                d.data_fechamento ? "Won" : d.status === "2" ? "Lost" : "Open",
+                d.cdate ? new Date(d.cdate).toLocaleDateString("pt-BR") : "",
+                life != null ? Math.round(life).toString() : "",
+                d.destino || "",
+                d.orcamento != null ? String(d.orcamento) : "",
+                d.num_convidados != null ? String(d.num_convidados) : "",
+                ...extraColumns.map((c) => c.getValue(d)),
+            ];
+        });
 
         const csvContent = [headers.join(";"), ...rows.map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(";"))].join("\n");
 
@@ -169,8 +388,8 @@ export function DealsModal({ isOpen, onClose, title, deals, stageKey }: DealsMod
                     borderRadius: 12,
                     border: `1px solid ${T.border}`,
                     width: "100%",
-                    maxWidth: 1000,
-                    maxHeight: "85vh",
+                    maxWidth: 1100,
+                    maxHeight: "90vh",
                     display: "flex",
                     flexDirection: "column",
                     overflow: "hidden",
@@ -225,6 +444,9 @@ export function DealsModal({ isOpen, onClose, title, deals, stageKey }: DealsMod
                     </div>
                 </div>
 
+                {/* Executive Summary */}
+                <ExecutiveSummary deals={uniqueDeals} />
+
                 {/* Search */}
                 <div style={{ padding: "12px 20px" }}>
                     <div
@@ -262,6 +484,7 @@ export function DealsModal({ isOpen, onClose, title, deals, stageKey }: DealsMod
                     <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
                         <thead>
                             <tr>
+                                <th scope="col" style={{ ...thStyle, width: 28 }} />
                                 <th scope="col" style={{ ...thStyle }}>ID</th>
                                 <th scope="col" style={{ ...thStyle }}>Pipeline</th>
                                 <th scope="col" style={{ ...thStyle }}>Stage</th>
@@ -275,30 +498,22 @@ export function DealsModal({ isOpen, onClose, title, deals, stageKey }: DealsMod
                             </tr>
                         </thead>
                         <tbody>
-                            {filteredDeals.map((deal) => (
-                                <tr
-                                    key={deal.id}
-                                    onClick={() => window.open(`https://welcometrips.activehosted.com/app/deals/${deal.id}`, "_blank", "noopener,noreferrer")}
-                                    style={{ cursor: "pointer" }}
-                                    onMouseEnter={(e) => (e.currentTarget.style.background = T.card)}
-                                    onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
-                                    title="Abrir no ActiveCampaign"
-                                >
-                                    <td style={{ ...tdStyle, fontFamily: "monospace", fontSize: 10, color: T.gold }}>{deal.id} ↗</td>
-                                    <td style={{ ...tdStyle }}>{deal.pipeline || "-"}</td>
-                                    <td style={{ ...tdStyle }}>{deal.stage || "-"}</td>
-                                    <td style={{ ...tdStyle }}>{getStatusBadge(deal.status)}</td>
-                                    <td style={{ ...tdStyle, fontSize: 10 }}>{deal.cdate ? new Date(deal.cdate).toLocaleDateString("pt-BR") : "-"}</td>
-                                    {extraColumns.map((col, i) => (
-                                        <td key={i} style={{ ...tdStyle, color: T.gold, fontSize: 10 }}>
-                                            {col.getValue(deal)}
-                                        </td>
-                                    ))}
-                                </tr>
-                            ))}
+                            {filteredDeals.map((deal) => {
+                                const isExpanded = expandedId === deal.id;
+                                return (
+                                    <DealRow
+                                        key={deal.id}
+                                        deal={deal}
+                                        isExpanded={isExpanded}
+                                        onToggle={() => setExpandedId(isExpanded ? null : deal.id)}
+                                        getStatusBadge={getStatusBadge}
+                                        extraColumns={extraColumns}
+                                    />
+                                );
+                            })}
                             {filteredDeals.length === 0 && (
                                 <tr>
-                                    <td colSpan={5 + extraColumns.length} style={{ ...tdStyle, textAlign: "center", padding: 32, color: T.muted }}>
+                                    <td colSpan={6 + extraColumns.length} style={{ ...tdStyle, textAlign: "center", padding: 32, color: T.muted }}>
                                         {search ? "Nenhum resultado encontrado" : "Nenhum deal encontrado"}
                                     </td>
                                 </tr>
@@ -308,6 +523,61 @@ export function DealsModal({ isOpen, onClose, title, deals, stageKey }: DealsMod
                 </div>
             </div>
         </div>
+    );
+}
+
+function DealRow({
+    deal,
+    isExpanded,
+    onToggle,
+    getStatusBadge,
+    extraColumns,
+}: {
+    deal: WonDeal;
+    isExpanded: boolean;
+    onToggle: () => void;
+    getStatusBadge: (d: WonDeal) => React.ReactNode;
+    extraColumns: { header: string; getValue: (d: WonDeal) => string }[];
+}) {
+    const [hover, setHover] = useState(false);
+    return (
+        <>
+            <tr
+                style={{ cursor: "pointer", background: hover || isExpanded ? T.card : "transparent", transition: "background 0.1s ease" }}
+                onMouseEnter={() => setHover(true)}
+                onMouseLeave={() => setHover(false)}
+                onClick={onToggle}
+                title="Clique para expandir detalhes"
+            >
+                <td style={{ ...tdStyle, padding: "10px 4px", width: 28 }}>
+                    {isExpanded
+                        ? <ChevronDown size={14} color={T.gold} />
+                        : <ChevronRight size={14} color={T.muted} />
+                    }
+                </td>
+                <td style={{ ...tdStyle, fontFamily: "monospace", fontSize: 10, color: T.gold }}>
+                    <a
+                        href={`https://welcometrips.activehosted.com/app/deals/${deal.id}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={(e) => e.stopPropagation()}
+                        style={{ color: T.gold, textDecoration: "none" }}
+                    >
+                        {deal.id} ↗
+                    </a>
+                </td>
+                <td style={{ ...tdStyle }}>{deal.pipeline || "-"}</td>
+                <td style={{ ...tdStyle }}>{deal.stage || "-"}</td>
+                <td style={{ ...tdStyle }}>{getStatusBadge(deal)}</td>
+                <td style={{ ...tdStyle, fontSize: 10 }}>{deal.cdate ? new Date(deal.cdate).toLocaleDateString("pt-BR") : "-"}</td>
+                {extraColumns.map((col, i) => (
+                    <td key={i} style={{ ...tdStyle, color: T.gold, fontSize: 10 }}>
+                        {col.getValue(deal)}
+                    </td>
+                ))}
+            </tr>
+            {isExpanded && <DealExpandedRow deal={deal} />}
+        </>
     );
 }
 

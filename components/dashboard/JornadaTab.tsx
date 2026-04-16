@@ -21,6 +21,8 @@ import {
     previousPeriod,
     sliceStages,
     targetRateBetween,
+    formatDaysDuration,
+    JORNADA_TO_MODAL_STAGE,
 } from "@/lib/metrics-jornada";
 
 interface JornadaTabProps {
@@ -261,6 +263,15 @@ function StageCard({
                                 ainda vão acontecer
                             </>
                         )}
+                    </div>
+                )}
+                {stage.avgDaysFromPrev != null && (
+                    <div style={{ fontSize: 11, color: T.muted, marginTop: 6, display: "flex", alignItems: "center", gap: 6 }}>
+                        <span style={{ color: T.gold, fontSize: 9 }}>⏱</span>
+                        Tempo médio na etapa:{" "}
+                        <span style={{ color: T.cream, fontFamily: "monospace", fontWeight: 600 }}>
+                            {formatDaysDuration(stage.avgDaysFromPrev)}
+                        </span>
                     </div>
                 )}
                 {isFirst && (
@@ -1775,6 +1786,7 @@ export function JornadaTab({ allDeals }: JornadaTabProps) {
                 onClose={() => setModalStage(null)}
                 title={modalStage ? `${modalStage.label} · ${periodo.label}` : ""}
                 deals={modalStage?.deals || []}
+                stageKey={modalStage ? JORNADA_TO_MODAL_STAGE[modalStage.key] as any : undefined}
             />
 
             <StageDeepDive
