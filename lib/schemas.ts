@@ -98,6 +98,13 @@ export const WonDealSchema = DealSchema.extend({
     motivo_de_perda: z.string().nullable().optional(),
     ww_closer_motivo_de_perda: z.string().nullable().optional(),
     como_conheceu_a_ww: z.string().nullable().optional(),
+    // WT taxa fields (Welcome Trips funnel)
+    pagamento_de_taxa: z.string().nullable().optional(),
+    pagou_a_taxa: z.string().nullable().optional(),
+    sdr_wt_data_fechamento_taxa: z.string().nullable().optional(),
+    // Common columns used by Board endpoint
+    created_at: z.string().nullable().optional(),
+    data_closer: z.string().nullable().optional(),
 });
 
 export type WonDeal = z.infer<typeof WonDealSchema>;
