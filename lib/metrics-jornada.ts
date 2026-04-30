@@ -1,4 +1,5 @@
 import type { WonDeal } from "./schemas";
+import { isCloserRealizada } from "./funnel-utils";
 
 export type JornadaMode = "coorte" | "evento";
 
@@ -107,9 +108,9 @@ const PREDICATES: Record<StageKey, StagePredicates> = {
         evento: (d, p) => inRange(d.data_horario_agendamento_closer, p.from, p.to),
     },
     realizouCloser: {
-        coorte: (d) => isFilled(d.reuniao_closer),
+        coorte: (d) => isCloserRealizada(d),
         evento: (d, p) =>
-            isFilled(d.reuniao_closer) && inRange(d.data_horario_agendamento_closer, p.from, p.to),
+            isCloserRealizada(d) && inRange(d.data_horario_agendamento_closer, p.from, p.to),
     },
     vendeu: {
         coorte: (d) => isFilled(d.data_fechamento),
@@ -352,7 +353,7 @@ const STAGE_EXTRA: Partial<Record<StageKey, (d: WonDeal) => boolean>> = {
         d.como_foi_feita_a_1a_reuniao != null &&
         d.como_foi_feita_a_1a_reuniao !== "" &&
         d.como_foi_feita_a_1a_reuniao !== "Não teve reunião",
-    realizouCloser: (d) => d.reuniao_closer != null && d.reuniao_closer !== "",
+    realizouCloser: (d) => isCloserRealizada(d),
 };
 
 function startOfDay(d: Date): Date {

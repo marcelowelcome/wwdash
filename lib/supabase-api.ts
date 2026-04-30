@@ -18,16 +18,8 @@ export function ownerName(id: string | null | undefined): string {
     return OWNER_NAMES[id] || `#${id}`;
 }
 
-// Global period filter — controls the data window for all deal fetches
+// Data window for deal fetches (used by /api/metrics route).
 export type GlobalPeriod = 30 | 90 | 180 | 365 | 0;
-export const DEFAULT_GLOBAL_PERIOD: GlobalPeriod = 180;
-export const PERIOD_OPTIONS: { value: GlobalPeriod; label: string }[] = [
-    { value: 30, label: "30 dias" },
-    { value: 90, label: "90 dias" },
-    { value: 180, label: "180 dias" },
-    { value: 365, label: "1 ano" },
-    { value: 0, label: "Tudo" },
-];
 export function periodToDaysBack(period: GlobalPeriod): number {
     return period === 0 ? 3650 : period;
 }

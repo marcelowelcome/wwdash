@@ -320,7 +320,7 @@ export function DealsModal({ isOpen, onClose, title, deals, stageKey }: DealsMod
             case "closerRealizada":
                 return [
                     { header: "Data Closer", getValue: (d) => formatDateTime(d.data_horario_agendamento_closer) },
-                    { header: "Como foi Closer", getValue: (d) => d.reuniao_closer || "-" },
+                    { header: "Como foi Closer", getValue: (d) => d.reuniao_closer || d.tipo_reuniao_closer || "-" },
                 ];
             case "vendas":
                 return [{ header: "Data Fechamento", getValue: (d) => formatDateTime(d.data_fechamento) }];
