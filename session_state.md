@@ -1,104 +1,167 @@
 # Session State — DashWW
 
-**Última atualização:** 2026-04-16 (sessão encerrada)
-**Versão em produção:** 2.6.1 + camada a11y (pós v2.6.1, ainda sem bump de versão)
+**Última atualização:** 2026-04-30 (sessão encerrada)
+**Versão em produção (kpi-weddings):** 2.6.1 + camada a11y + extensões da Jornada (avg time, executive summary, expandable lead details)
 **Branch:** `main`
-**Último commit:** `b73cc45` (kpi-weddings)
+**Último commit kpi-weddings:** `12e4072`
+**Último commit dash-webhook:** `4d09807` (push: 2026-04-30)
 
 > Documento vivo — atualize a cada sessão encerrada. Registra o *estado presente* (o que está pronto, em voo, travado).
-> Para **o que vem depois**, ver [ROADMAP.md](./ROADMAP.md).
+> A seção **Runbook** abaixo tem diagnóstico passo-a-passo dos problemas operacionais que já enfrentamos. **Consulte-a antes de gastar tempo investigando do zero.**
 
 ---
 
 ## O que está em produção hoje
 
 ### kpi-weddings ✅
-- Aba **Jornada do Lead** com 4 sub-views (Entrada e Agendamento, Reunião e Qualificação, Fechamento, Visão Completa).
-- MiniFunnel horizontal com 7 etapas, metas coloridas e PoP.
-- Toggle Coorte/Evento e Narrada/Detalhada.
-- StageChart por sub-view (linha/barra/área, granularidade diária/semanal/mensal, overlay do período anterior).
-- StageDeepDive por etapa: respostas do lead (destino, cidade, orçamento em faixas, número de convidados em faixas, previsão de casamento, previsão de assessoria, status do relacionamento, costumam viajar, já foi em DW, já tem destino definido, **como conheceu a WW**) + registro do SDR (**como foi feita a 1ª reunião**, **tipo de reunião com Closer**, qualificado para SQL, motivos de qualificação, motivos de desqualificação, motivo de perda).
-- Deep Dive esconde blocos e grupos sem contexto automaticamente.
-- ClosingBox por sub-view com prosa, diagnóstico e sugestões de ação.
-- Dropout analysis entre cada par de etapas (por stage AC e por motivo, com trend PoP).
-- DealsModal com linhas clicáveis (abre deal no AC).
-- Safety net em `mapRowToWonDeal` que recupera valores de orçamento legados com formatação corrompida (≥ R$ 1M, divisíveis por 100 → divide por 100).
-- **Camada de acessibilidade sistemática** (6 commits atômicos):
-  - Contraste de `T.muted` corrigido (3.67 → 5.24 contra o fundo).
-  - `:focus-visible` global com anel dourado.
-  - Hook `useDialog` (focus trap, Esc, scroll lock, retorno de foco) aplicado em DealsModal e StageDeepDive; `role="dialog"` + `aria-modal` + `aria-labelledby`.
-  - Cor deixou de ser único signal: glifos ●/◐/○ no MiniFunnel; stroke patterns distintos por métrica no StageChart; SVG swatch nos chips.
-  - `prefers-reduced-motion` respeitado via CSS global e via hook `useReducedMotion` passado ao Recharts.
-  - Touch targets elevados para 36–40px em todos os pills; StageCard ganhou `role="button"` + teclado (Enter/Space) + aria-label.
-  - `aria-pressed` nos toggles (Mode, Period, Display), `aria-current="page"` na SubView nav, `scope="col"` nas tabelas.
+- Tudo da v2.6.1 + camada a11y (entregue em 16/abr).
+- **Novo desde 16/abr:** `12e4072` — avg time in stage, executive summary e expandable lead details na aba Jornada.
+- Deploy desbloqueado em 30/abr (estava travado em "Pending" por 2 semanas; ver Runbook A).
+- URL de produção: https://weddings-kpi.vercel.app/
 
-### dash-webhook ⏸️
-- **Sem alterações deployadas desde 7fbf5e1.** O parseNumber corrigido (BR-aware) está **apenas local** em `supabase/functions/_shared/field-maps.ts`, `scripts/backfill-deals.mjs` e `scripts/reprocess-raw-data.mjs`. Não commitado.
-- Estado local tem ~470 linhas de refatoração nas Edge Functions (`activecampaign-webhook`, `sync-deals`) que movem campos duplicados para `_shared/`. Também não commitado.
-- A pasta `supabase/functions/_shared/` inteira é untracked no git apesar de ser referenciada como "fonte única v2.0" na documentação interna (vide memória do projeto).
+### dash-webhook ✅ (nova realidade compreendida)
+- **Repo separado** (`marcelowelcome/dash-webhook`), não confundir com kpi-weddings (`marcelowelcome/wwdash`).
+- O que **roda em produção**: Edge Functions no Supabase (`sync-deals` via pg_cron 2h, `activecampaign-webhook` via webhook AC).
+- O que **NÃO roda em produção**: as rotas Next.js (`/api/ads/refresh`, `/api/deals/sync`, `/api/webhook/activecampaign`). O único deploy Vercel encontrado (`ww-dash.vercel.app`) é zumbi — código antigo + middleware redirecionando tudo pra `/login`.
+- Commit `4d09807` (30/abr) consertou o build break + uma regressão silenciosa no `fetchGoogleAdsSpend` (lia `.is('pipeline', null)` enquanto dados estão tagueados `'wedding'`). **Conserto válido tecnicamente, sem efeito imediato em prod** — mas pronto pra quando alguém deployar o dash-webhook de forma legítima.
+
+---
+
+## Runbook — Troubleshooting comum
+
+Os três sintomas abaixo já apareceram. Cada um tem uma raiz que **não é a óbvia**. Siga o passo-a-passo antes de investigar do zero.
+
+### A. Build do Vercel "Pending" por horas/dias (kpi-weddings)
+
+**Sintoma:** push novo na `main` mas o site continua servindo versão antiga. Painel Vercel mostra status `● Pending` no último deploy.
+
+**Causa real (caso de 16-30/abr):** plano Hobby tem **1 build concorrente**; se um deploy trava (compilação que não termina, etapa de upload que congela), todos os deploys subsequentes ficam em fila atrás dele indefinidamente.
+
+**Diagnóstico:**
+1. https://vercel.com/dashboard → projeto **`weddings-kpi`** → aba **Deployments**.
+2. Procure o deploy mais antigo com status `Building` ou `Queued`. Esse é o que travou.
+3. Cuidado: pode haver **projetos zumbi** apontando pro mesmo repo (ex: `wwelcome` em 2026, deploy abandonado). Esses NÃO são o problema, mas poluem o status check do GitHub com ❌ "Canceled". Identificar pelo nome.
+
+**Solução:**
+1. No deploy travado: menu `⋯` → **Cancel Deployment**. Libera o slot.
+2. Os deploys posteriores entram em fila e tentam de novo automaticamente.
+3. Validação: aguardar ~2min, atualizar a página de Deployments. O último deploy deve passar para `Building` → `Ready`.
+4. Confirmar com curl:
+   ```bash
+   curl -sI https://weddings-kpi.vercel.app/ | grep -E "age|x-vercel-id"
+   ```
+   `age` baixo (segundos/minutos) = deploy fresco. Se `age` for de dias, ainda está servindo cache antigo — aguarde mais 1-2 min.
+
+**Limpeza opcional (não-urgente):** `wwelcome` e `ww-dash.vercel.app` (zumbis no Vercel) podem ser desconectados em **Project Settings → Git → Disconnect** para parar de poluir status checks.
+
+### B. Cache de ads parou de atualizar (dashboard mostrando R$ 0 ou dados antigos em Meta/Google Spend)
+
+**Sintoma:** widgets de Meta Ads ou Google Ads exibindo dados antigos ou R$ 0. SQL `SELECT MAX(updated_at) FROM ads_spend_cache` mostra última escrita há dias/semanas.
+
+**Causa real (caso de 09-30/abr):** o sync de ads é **client-triggered**, não cron. `Dashboard.tsx` (linhas ~358-366) e `FunnelMetaTab.tsx` (~158-166) disparam `fetch("/api/sync-meta-ads", ...)` e `fetch("/api/sync-google-ads", ...)` quando o componente monta no browser. Se ninguém abre o dashboard, a cache não atualiza. Se o site está cacheado/inacessível, idem. **Não há cron Vercel ou GitHub Action para isso** — não confie no `vercel.json` do `dash-webhook` (declara crons mas é zumbi).
+
+**Diagnóstico:**
+1. SQL no Supabase ActiveDash:
+   ```sql
+   SELECT
+     source,
+     pipeline,
+     MAX(updated_at) AS ultima_atualizacao,
+     NOW() - MAX(updated_at) AS frescor
+   FROM ads_spend_cache
+   GROUP BY source, pipeline
+   ORDER BY source;
+   ```
+2. Se `frescor > 24h`, há sintoma confirmado.
+
+**Solução:**
+1. Abrir https://weddings-kpi.vercel.app/ logado.
+2. Esperar 30-60s para o `Dashboard.tsx` disparar os syncs em background.
+3. Re-rodar o SQL acima. `frescor` deve voltar a segundos/minutos.
+
+**Se o sync não disparar mesmo com dashboard aberto:** verificar env vars no Vercel `weddings-kpi`:
+- `META_ADS_ACCESS_TOKEN`, `META_ADS_ACCOUNT_ID`
+- `GOOGLE_ADS_CLIENT_ID`, `GOOGLE_ADS_CLIENT_SECRET`, `GOOGLE_ADS_REFRESH_TOKEN`, `GOOGLE_ADS_DEVELOPER_TOKEN`, `GOOGLE_ADS_CUSTOMER_ID`
+
+Tokens podem ter vencido. Console do browser na aba Network vai mostrar a chamada falhando com 401/403.
+
+### C. ❌ "Canceled" ou "Failing" em commit no GitHub
+
+**Sintoma:** página do commit no GitHub mostra ❌ vermelho ao lado do hash, com texto "Canceled from the Vercel Dashboard" ou similar.
+
+**Causa real:** projetos Vercel zumbi (`wwelcome` para o repo wwdash, `ww-dash` para o repo dash-webhook) recebem trigger a cada push e são auto-cancelados ou falham. **Cosmético** — não significa que o deploy de produção falhou. O projeto Vercel ativo (`weddings-kpi`) pode ter passado normalmente.
+
+**Diagnóstico:**
+1. Clicar no ❌ no GitHub → ver lista de checks.
+2. Se houver MÚLTIPLOS checks Vercel (ex: "Vercel — wwelcome ❌" e "Vercel — weddings-kpi ●"), o ❌ provavelmente é do zumbi e o `●` é o real.
+3. Confirmar pelo painel Vercel qual projeto é o "real" (o que tem domain de produção). Os zumbis costumam ter datas de last deploy de meses atrás.
+
+**Solução:** ignorar o ❌ do zumbi, ou desconectá-lo (Settings → Git → Disconnect) para limpar o ruído. Não há ação de código necessária.
 
 ---
 
 ## Pendências abertas
 
-### Dash-webhook — desempatar o estado local
-- Decidir: commitar a refatoração local das Edge Functions (~470 linhas) + pasta `_shared/` como está, ou revisar antes? Quem escreveu essa parte não é o Claude.
-- Quando a ingestão consertada for deployada, rodar `scripts/reprocess-raw-data.mjs` pra corrigir os valores legados de `orcamento` no banco. Com isso a safety net no kpi-weddings vira dead code (pode ser removida depois).
+### dash-webhook — estado local não-commitado
+- ~470 linhas de WIP de terceiros (refator das Edge Functions movendo código duplicado para `_shared/`) continua não commitado. Pasta `supabase/functions/_shared/` é untracked apesar de ser referenciada como "fonte única v2.0" na arquitetura.
+- 2 migrations de 16/abr (`20260416_create_sync_logs.sql`, `20260416_tighten_rls.sql`) untracked, não aplicadas em prod.
+- 3 scripts utilitários (`backfill-deals.mjs`, `generate-key-map.mjs`, `reprocess-raw-data.mjs`) untracked.
+- 2 arquivos suspeitos (`query.js`, `test-won.js`) — provavelmente ad-hoc, descartar?
+- Sem dono claro para revisar. Recomendação: o autor original (PaNdassauro?) consolida ou descarta.
 
-### Deploy do Vercel
-- Último report do usuário: commits novos na `main` do kpi-weddings não estão atualizando no Vercel.
-- Meu código não tem erro (type-check + 28 testes verdes + dev local 200).
-- Candidatos prováveis: build no Vercel falhando por causa da integração Google Ads (PRs #4 e #5 do colaborador @PaNdassauro) ou hook desconectado.
-- **Ação pendente:** usuário precisa abrir o painel do Vercel → Deployments, olhar o último deploy para `660120f` e mandar o log de erro, se houver.
+### dash-webhook — decisão de produto pendente
+- O Vercel deploy do dash-webhook (`ww-dash.vercel.app`) está zumbi com middleware bloqueando tudo. Duas opções:
+  1. **Deletar o projeto Vercel** e aceitar que o dash-webhook é só repo de Edge Functions (Supabase) + scripts. As rotas Next dele são vestígio aspiracional.
+  2. **Re-deployar corretamente** com as env vars certas (META_ADS_*, GOOGLE_ADS_*, CRON_SECRET, etc.) e migrar o sync de ads para cron Vercel agendado, eliminando a dependência do client-trigger. Mais robusto, mas exige convergir o WIP local primeiro.
 
-### Dívida técnica conhecida
-- Safety net de orçamento é heurística — se um lead legítimo tiver orçamento ≥ R$ 1M com últimos 2 dígitos 00, vai ser silenciosamente dividido por 100. Trade-off aceito enquanto não rola o reprocess.
-- WIPs antigos no kpi-weddings (`sdr_dash_v2.jsx`, `sdr_investigation_dash.jsx`, `scripts/` com 5 arquivos de audit/fix de mar/12-13) continuam untracked. Sem plano imediato.
+### Dívida técnica conhecida (não mudou desde 16/abr)
+- Safety net de orçamento em `mapRowToWonDeal` (heurística — divide por 100 valores ≥ R$ 1M com últimos 2 dígitos 00). Vira dead code depois que o reprocess-raw-data for rodado em prod.
+- WIPs antigos no kpi-weddings (`sdr_dash_v2.jsx`, `sdr_investigation_dash.jsx`, `sdr_investigation_dash (1).jsx`, scripts de audit/fix de mar/12-13) seguem untracked. Sem plano imediato.
 - Testes E2E (Playwright/Cypress) ainda não existem.
 
 ---
 
 ## Ambiente
 
-- **Servidor dev local:** http://localhost:3000 — rodando em background desde o início da sessão.
-- **Build/Test no WSL:** `npm`/`npx` falham, usar node direto (vide `MEMORY.md`).
-- **Última rodada de testes:** 190 testes kpi-weddings (28 dos quais do `metrics-jornada`), tudo verde. Há 2 testes pré-existentes falhando em `metrics-sdr.test.ts` (não relacionados à Jornada).
-- **Type-check:** limpo.
+- **Servidor dev local:** http://localhost:3000 (subir com `node node_modules/next/dist/bin/next dev` quando necessário).
+- **Build/Test no WSL:** `npm`/`npx` falham, usar node direto: `/home/marcelo/.nvm/versions/node/v24.14.0/bin/node node_modules/...`
+- **Última rodada de testes (16/abr):** kpi-weddings 198/203 verdes (5 falhas pré-existentes em `MonthSelector.test.tsx` por causa do PR #5 Google Ads, não relacionadas).
+- **Última rodada de testes (30/abr, dash-webhook):** 72/72 verdes.
+- **Type-check (30/abr, ambos os projetos):** limpo.
 
 ---
 
-## Histórico da sessão atual (2026-04-16)
+## Histórico da sessão atual (2026-04-30)
 
-Em ordem cronológica, as decisões chave e o que foi entregue:
+Em ordem cronológica:
 
-1. Usuário pediu uma visualização para diagnosticar a queda de volume comercial apontada pelo time (3 reuniões closer em 15 dias). Caminho desenhado: funil em 4 telas (MKT→SDR, SDR→Closer, Closer→Venda, Visão Completa) com tom sério e didático.
-2. Implementada aba Jornada completa (7 estágios + modo coorte/evento + comparação calendárica fair MoM).
-3. Adicionados: MiniFunnel horizontal, Narrada/Detalhada toggle, StageChart com metric picker e granularidade, DealsModal clicável, ClosingBox com diagnóstico automático, dropout analysis com motivos e trend PoP.
-4. StageDeepDive reformulado de "fonte/dono/destino/canal" para "respostas do lead + registro do SDR".
-5. Detectado bug no parseNumber da ingestão (formato BR stripado gera orçamentos inflados 100x). Corrigido em dash-webhook (local) + safety net na leitura do kpi-weddings.
-6. Expostos `como_conheceu_a_ww`, `como_foi_feita_a_1a_reuniao`, `tipo_reuniao_closer` no deep dive.
-7. Blocos e grupos sem contexto são agora escondidos automaticamente.
-8. 3 commits no kpi-weddings empurrados pra `main`. dash-webhook mantido local por pendência de revisão do WIP pré-existente.
-9. Documentação atualizada: `versions.ts` (2.6.0 e 2.6.1), `ARCHITECTURE.md`, `PROMPT_CONTEXT.md`, novos `session_state.md` e `session_starter.md`.
-10. Revisão UI/UX usando skill `ui-ux-pro-max`. Produziu 13 achados; 6 commits atômicos de a11y endereçaram os itens CRÍTICO, ALTO e MÉDIO.
-11. Plano de sprints detalhado em [ROADMAP.md](./ROADMAP.md).
+1. **Diagnóstico inicial:** identificado bloqueador da Sprint 1 — build do dash-webhook com `fetchMetaAdsSpend(year, month, pipeline: ViewType)` chamado com 2 args em `/total`, `/trips`, `/wedding`.
+2. **Fix v1 (errado):** alteração temporária de `fetchMetaAdsSpend` para 2 args + `.is('pipeline', null)` baseada na migration `006_fix_ads_cache_pipeline.sql`. Type-check, vitest e build passaram local. **Quase commitei sem validar dados.**
+3. **Validação SQL** (a pedido do usuário): `ads_spend_cache` em prod tem **38 rows meta com `pipeline='wedding'` + 3 órfãs com `pipeline=NULL` (R$ 0)** + 29 rows google com `pipeline='wedding'`. **Convenção viva é `'wedding'`, não `null`** — o fix v1 zeraria o dashboard.
+4. **Fix v2 (Opção Y, correto):** revert do v1; `fetchGoogleAdsSpend` ganha `pipeline: ViewType` e usa `.eq` (estava lendo `.is(null)` e mostrando R$ 0 silencioso há ≥20 dias); call sites passam `'wedding'` em /total e /wedding, `'trips'` em /trips; `refresh/route.ts` cron writer passa a gravar `pipeline='wedding'` via constante `ANCHOR_PIPELINE`. Validado tsc/vitest/build, commit `4d09807`.
+5. **SQL de limpeza** das 3 órfãs `pipeline=NULL` em meta_ads — rodado pelo usuário com sucesso.
+6. **Vercel kpi-weddings desbloqueado:** deploy de `12e4072` que estava em "Pending" há 2 semanas foi destravado pelo usuário (provavelmente cancelando o deploy mais antigo da fila para liberar o slot do plano Hobby). `weddings-kpi.vercel.app` voltou a servir conteúdo fresco (`age: 105s` pós-fix).
+7. **Push do `4d09807`** no dash-webhook efetivado em origin/main.
+8. **Investigação do dash-webhook em prod (becos sem saída):** sondagem de URLs Vercel (`dash-webhook.vercel.app`, `ww-dash.vercel.app`, etc.) mostrou que o único deploy ativo (`ww-dash.vercel.app`) é zumbi — middleware redireciona tudo para `/login`, `/api/auth` retorna 404 (rota recente que não existe na build deployada). **Conclusão: dash-webhook não roda como Next.js em prod.**
+9. **Descoberta da arquitetura real:** kpi-weddings tem suas próprias rotas `/api/sync-meta-ads` e `/api/sync-google-ads`, disparadas client-side por `Dashboard.tsx` e `FunnelMetaTab.tsx` ao montar. **Não há cron**. A "última atualização em 09/abr" coincide com a última vez que alguém abriu o dashboard antes do build travar.
+10. **Validação final:** usuário abriu https://weddings-kpi.vercel.app/, sync rodou, `ads_spend_cache` voltou a atualizar. Sprint 1 fechada.
 
 ---
 
 ## Próximos passos (resumo)
 
-Começar pela **Sprint 1** do [ROADMAP.md](./ROADMAP.md):
-1. Investigar por que o Vercel não está atualizando desde `660120f`.
-2. Resolver o estado local não commitado do `dash-webhook` e colocar o fix do `parseNumber` em produção.
-3. Rodar o reprocess pra limpar valores legados de `orcamento`.
-4. Remover a safety net de `recoverOrcamento` depois do reprocess.
-
-Depois, Sprint 2 (qualidade + a11y global), Sprint 3 (mobile responsive), Sprint 4 (perf), Sprint 5 (validação com o comercial).
+1. Decidir o que fazer com o WIP não-commitado do dash-webhook (consolidar ou descartar — precisa do autor original).
+2. Decidir destino do projeto Vercel zumbi do dash-webhook (deletar ou re-deployar).
+3. Limpar `wwelcome` no Vercel (cosmético — só para parar o ❌ no GitHub status).
+4. Rodar `reprocess-raw-data.mjs` em prod assim que o WIP do dash-webhook for consolidado, e remover a safety net `recoverOrcamento` depois.
+5. Continuar Sprint 2: índices Supabase + cobertura de testes (ver [ROADMAP.md](./ROADMAP.md)).
 
 ---
 
-## Snapshot de testes (fim da sessão)
+## Snapshot de testes (fim da sessão 30/abr)
 
-- **Vitest:** 198/203 passando. 5 falhas pré-existentes em `components/dashboard/__tests__/MonthSelector.test.tsx` — vieram do PR #5 Google Ads (refator pra `react-day-picker` sem atualização de testes), não relacionadas à Jornada.
-- **Type-check:** limpo.
-- **Servidor dev local:** rodando em http://localhost:3000 — ainda de pé ao fim da sessão, pode ser derrubado.
+- **kpi-weddings Vitest:** sem alteração desde 16/abr (198/203 passando, 5 falhas pré-existentes em `MonthSelector.test.tsx`).
+- **dash-webhook Vitest:** 72/72 verdes.
+- **Type-check (ambos):** limpos.
+- **Builds locais:** ambos exit 0.
+- **Produção kpi-weddings:** `12e4072` Ready, idade ~minutos.
