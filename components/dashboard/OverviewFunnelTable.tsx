@@ -12,6 +12,7 @@ import {
     upsertMonthlyTarget,
 } from "@/lib/supabase-api";
 import { type WonDeal, type MonthlyTarget, type FunnelMetrics } from "@/lib/schemas";
+import { realizouCloser } from "@/lib/closer-utils";
 import {
     getMonthProgress,
     isInMonth,
@@ -48,8 +49,7 @@ function calcMetrics(deals: WonDeal[], year: number, month: number, vendasCount?
             (d) =>
                 isInWwPipeline(d) &&
                 isInMonth(d.data_horario_agendamento_closer, year, month) &&
-                d.reuniao_closer != null &&
-                d.reuniao_closer !== ""
+                realizouCloser(d)
         ).length,
         vendas: vendasCount ?? wwDeals.filter((d) => isInMonth(d.data_fechamento, year, month)).length,
     };
@@ -82,8 +82,7 @@ function getDealsForStage(deals: WonDeal[], stage: StageKey, year: number, month
                 (d) =>
                     isInWwPipeline(d) &&
                     isInMonth(d.data_horario_agendamento_closer, year, month) &&
-                    d.reuniao_closer != null &&
-                    d.reuniao_closer !== ""
+                    realizouCloser(d)
             );
         case "vendas":
             return wwDeals.filter((d) => isInMonth(d.data_fechamento, year, month));

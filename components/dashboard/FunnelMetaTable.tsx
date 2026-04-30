@@ -4,6 +4,7 @@ import { useState, useMemo, useRef, useEffect } from "react";
 import { T } from "./theme";
 import { DealsModal } from "./DealsModal";
 import { type WonDeal, type FunnelMetrics, type MonthlyTarget } from "@/lib/schemas";
+import { realizouCloser } from "@/lib/closer-utils";
 import {
     formatPercent,
     formatCurrency,
@@ -148,8 +149,7 @@ export function FunnelMetaTable({ deals, year, month, dateRange, target, previou
                     return elopDeals.filter(
                         (d) =>
                             matchesDate(d.data_horario_agendamento_closer) &&
-                            d.reuniao_closer !== null &&
-                            d.reuniao_closer !== ""
+                            realizouCloser(d)
                     );
                 case "vendas":
                     return elopDeals.filter((d) => matchesDate(d.data_fechamento));
@@ -185,8 +185,7 @@ export function FunnelMetaTable({ deals, year, month, dateRange, target, previou
                     return outrosDeals.filter(
                         (d) =>
                             matchesDate(d.data_horario_agendamento_closer) &&
-                            d.reuniao_closer !== null &&
-                            d.reuniao_closer !== ""
+                            realizouCloser(d)
                     );
                 case "vendas":
                     return outrosDeals.filter((d) => matchesDate(d.data_fechamento));
@@ -221,8 +220,7 @@ export function FunnelMetaTable({ deals, year, month, dateRange, target, previou
                     return totalDeals.filter(
                         (d) =>
                             matchesDate(d.data_horario_agendamento_closer) &&
-                            d.reuniao_closer !== null &&
-                            d.reuniao_closer !== ""
+                            realizouCloser(d)
                     );
                 case "vendas":
                     return totalDeals.filter((d) => matchesDate(d.data_fechamento));
@@ -258,8 +256,7 @@ export function FunnelMetaTable({ deals, year, month, dateRange, target, previou
                     (d) =>
                         isInWwPipeline(d) &&
                         matchesDate(d.data_horario_agendamento_closer) &&
-                        d.reuniao_closer !== null &&
-                        d.reuniao_closer !== ""
+                        realizouCloser(d)
                 );
             case "vendas":
                 return wwDeals.filter((d) => matchesDate(d.data_fechamento));
