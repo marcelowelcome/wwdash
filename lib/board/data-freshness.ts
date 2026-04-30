@@ -13,34 +13,30 @@ import type { DataFreshness, UtcRange } from "./types";
 export async function getDataFreshness(period: UtcRange): Promise<DataFreshness> {
     const supabase = getSupabaseAdmin();
 
-    // Latest successful sync (any time)
+    // Latest sync. The Edge Function inserts every successful run with
+    // finished_at = NOW(); a row IS the success signal (failures don't insert).
+    // See: dash-webhook/supabase/migrations/20260416_create_sync_logs.sql
     const { data: latestRows, error: latestErr } = await supabase
         .from("sync_logs")
-        .select("finished_at, completed_at, created_at, status")
-        .eq("status", "success")
+        .select("finished_at")
         .order("finished_at", { ascending: false, nullsFirst: false })
         .limit(1);
 
     if (latestErr) {
-        // Surface the error to the orchestrator. Do not swallow.
         throw new Error(`Failed to query sync_logs (latest): ${latestErr.message}`);
     }
 
     const latestRow = latestRows && latestRows.length > 0 ? latestRows[0] : null;
     const acLastSync: string | null = latestRow
-        ? (latestRow.finished_at as string) ||
-          (latestRow.completed_at as string) ||
-          (latestRow.created_at as string) ||
-          null
+        ? ((latestRow as { finished_at: string }).finished_at ?? null)
         : null;
 
     const stale = isStale(acLastSync);
 
-    // Count of successful syncs in [start, end]
+    // Count of syncs in [start, end] (every row = a successful run)
     const { count, error: countErr } = await supabase
         .from("sync_logs")
         .select("*", { count: "exact", head: true })
-        .eq("status", "success")
         .gte("finished_at", period.startUtc.toISOString())
         .lte("finished_at", period.endUtc.toISOString());
 
