@@ -17,6 +17,7 @@ import {
     isInWwLeadsPipeline,
     isInWwMqlPipeline,
     isInWwOutrosPipeline,
+    isCloserRealizada,
 } from "@/lib/funnel-utils";
 
 type ViewMode = "wedding" | "elopement" | "outros" | "total";
@@ -35,6 +36,7 @@ interface FunnelMetaTableProps {
     previousMetrics: FunnelMetrics | null;
     monthProgress: number;
     cpl: number;
+    totalAdsSpend?: number;
     viewMode?: ViewMode;
     onTargetUpdate?: (field: string, value: number) => void;
 }
@@ -103,7 +105,7 @@ const FUNNEL_COLUMNS = ["Leads", "MQL", "Agendamento", "Reunioes", "Qualificado"
 
 type StageKey = "leads" | "mql" | "agendamento" | "reunioes" | "qualificado" | "closerAgendada" | "closerRealizada" | "vendas";
 
-export function FunnelMetaTable({ deals, year, month, dateRange, target, previousMetrics, monthProgress, cpl, viewMode = "wedding", onTargetUpdate }: FunnelMetaTableProps) {
+export function FunnelMetaTable({ deals, year, month, dateRange, target, previousMetrics, monthProgress, cpl, totalAdsSpend, viewMode = "wedding", onTargetUpdate }: FunnelMetaTableProps) {
     const [modalOpen, setModalOpen] = useState(false);
     const [modalTitle, setModalTitle] = useState("");
     const [modalDeals, setModalDeals] = useState<WonDeal[]>([]);
@@ -148,8 +150,7 @@ export function FunnelMetaTable({ deals, year, month, dateRange, target, previou
                     return elopDeals.filter(
                         (d) =>
                             matchesDate(d.data_horario_agendamento_closer) &&
-                            d.reuniao_closer !== null &&
-                            d.reuniao_closer !== ""
+                            isCloserRealizada(d)
                     );
                 case "vendas":
                     return elopDeals.filter((d) => matchesDate(d.data_fechamento));
@@ -185,8 +186,7 @@ export function FunnelMetaTable({ deals, year, month, dateRange, target, previou
                     return outrosDeals.filter(
                         (d) =>
                             matchesDate(d.data_horario_agendamento_closer) &&
-                            d.reuniao_closer !== null &&
-                            d.reuniao_closer !== ""
+                            isCloserRealizada(d)
                     );
                 case "vendas":
                     return outrosDeals.filter((d) => matchesDate(d.data_fechamento));
@@ -221,8 +221,7 @@ export function FunnelMetaTable({ deals, year, month, dateRange, target, previou
                     return totalDeals.filter(
                         (d) =>
                             matchesDate(d.data_horario_agendamento_closer) &&
-                            d.reuniao_closer !== null &&
-                            d.reuniao_closer !== ""
+                            isCloserRealizada(d)
                     );
                 case "vendas":
                     return totalDeals.filter((d) => matchesDate(d.data_fechamento));
@@ -258,8 +257,7 @@ export function FunnelMetaTable({ deals, year, month, dateRange, target, previou
                     (d) =>
                         isInWwPipeline(d) &&
                         matchesDate(d.data_horario_agendamento_closer) &&
-                        d.reuniao_closer !== null &&
-                        d.reuniao_closer !== ""
+                        isCloserRealizada(d)
                 );
             case "vendas":
                 return wwDeals.filter((d) => matchesDate(d.data_fechamento));
@@ -352,15 +350,19 @@ export function FunnelMetaTable({ deals, year, month, dateRange, target, previou
         ? [previousMetrics.leads, previousMetrics.mql, previousMetrics.agendamento, previousMetrics.reunioes, previousMetrics.qualificado, previousMetrics.closerAgendada, previousMetrics.closerRealizada, previousMetrics.vendas]
         : Array(8).fill("-");
 
+    // Custos = total ads spend / realizado at each stage. Falls back to cpl * leads
+    // when totalAdsSpend isn't passed (older callers), keeping the leads column accurate.
+    const totalAds = totalAdsSpend ?? cpl * metrics.leads;
+    const costPerStage = (count: number): string => (count > 0 ? formatCurrency(totalAds / count) : "-");
     const custos = [
-        formatCurrency(cpl * metrics.leads),
-        formatCurrency(cpl * 1.5 * metrics.mql),
-        formatCurrency(cpl * 2 * metrics.agendamento),
-        formatCurrency(cpl * 2.5 * metrics.reunioes),
-        formatCurrency(cpl * 3 * metrics.qualificado),
-        formatCurrency(cpl * 3.5 * metrics.closerAgendada),
-        formatCurrency(cpl * 4 * metrics.closerRealizada),
-        "-",
+        costPerStage(metrics.leads),
+        costPerStage(metrics.mql),
+        costPerStage(metrics.agendamento),
+        costPerStage(metrics.reunioes),
+        costPerStage(metrics.qualificado),
+        costPerStage(metrics.closerAgendada),
+        costPerStage(metrics.closerRealizada),
+        costPerStage(metrics.vendas),
     ];
 
     const rows = [

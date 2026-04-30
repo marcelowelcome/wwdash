@@ -28,6 +28,7 @@ import {
     isInWwPipeline,
     isInWwLeadsPipeline,
     isInWwMqlPipeline,
+    isCloserRealizada,
 } from "@/lib/funnel-utils";
 
 interface FunnelMetaTabProps {
@@ -65,12 +66,11 @@ function calculateMetricsFromDeals(deals: WonDeal[], year: number, month: number
         qualificado: allWwDeals.filter((d) => isInMonth(d.data_qualificado, year, month)).length,
         // Closer Agendada: data_closer falls within the selected month
         closerAgendada: allWwDeals.filter((d) => isInMonth(d.data_horario_agendamento_closer, year, month)).length,
-        // Closer Realizada: data_closer in month + reuniao_closer filled
+        // Closer Realizada: data_closer in month + reunion evidence filled (reuniao_closer or tipo_reuniao_closer)
         closerRealizada: allWwDeals.filter(
             (d) =>
                 isInMonth(d.data_horario_agendamento_closer, year, month) &&
-                d.reuniao_closer !== null &&
-                d.reuniao_closer !== ""
+                isCloserRealizada(d)
         ).length,
         // Venda: use provided vendasCount if available, otherwise count all deals with data_fechamento (except Elopement)
         vendas: vendasCount ?? deals.filter((d) => !isElopement(d) && isInMonth(d.data_fechamento, year, month)).length,
@@ -391,6 +391,7 @@ export function FunnelMetaTab({ allDeals }: FunnelMetaTabProps) {
                     previousMetrics={previousMetrics}
                     monthProgress={monthProgress}
                     cpl={cpl}
+                    totalAdsSpend={adsData?.total.spend ?? 0}
                     viewMode={viewMode}
                     onTargetUpdate={async (field, value) => {
                         const updated = await upsertMonthlyTarget(selectedYear, selectedMonth, "wedding", { [field]: value });

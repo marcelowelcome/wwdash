@@ -41,6 +41,16 @@ export function isInWwOutrosPipeline(d: WonDeal): boolean {
     return (d.pipeline_id != null && WW_OUTROS_IDS_SET.has(d.pipeline_id)) || (d.pipeline != null && WW_OUTROS_NAMES_SET.has(d.pipeline));
 }
 
+// "Closer Realizada" = the meeting actually happened. We accept either evidence:
+// reuniao_closer (textual recap) OR tipo_reuniao_closer (Online/Presencial — only set
+// after the meeting). The OR keeps historical months intact while covering periods
+// where only one of the two source columns is being populated by the CRM sync.
+export function isCloserRealizada(d: WonDeal): boolean {
+    const rc = d.reuniao_closer;
+    const tipo = d.tipo_reuniao_closer;
+    return (rc != null && rc !== "") || (tipo != null && tipo !== "");
+}
+
 // ─── FORMAT FUNCTIONS ────────────────────────────────────────────────────────
 
 export function formatCurrency(value: number): string {
