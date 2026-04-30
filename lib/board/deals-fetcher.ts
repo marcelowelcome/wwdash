@@ -16,7 +16,8 @@ const SELECTED_COLUMNS = [
     "data_qualificado",
     "data_closer",
     "data_fechamento",
-    "reuniao_closer",
+    "ww_como_foi_feita_reuni_o_closer",
+    "tipo_da_reuni_o_com_a_closer",
     "pipeline",
     "is_elopement",
     "title",
@@ -31,7 +32,8 @@ interface RawRow {
     data_qualificado: string | null;
     data_closer: string | null;
     data_fechamento: string | null;
-    reuniao_closer: string | null;
+    ww_como_foi_feita_reuni_o_closer: string | null;
+    tipo_da_reuni_o_com_a_closer: string | null;
     pipeline: string | null;
     is_elopement: boolean | null;
     title: string | null;
@@ -47,7 +49,8 @@ function rowToBoardDeal(r: RawRow): BoardDeal {
         data_qualificado: r.data_qualificado,
         data_closer: r.data_closer,
         data_fechamento: r.data_fechamento,
-        reuniao_closer: r.reuniao_closer,
+        ww_como_foi_feita_reuni_o_closer: r.ww_como_foi_feita_reuni_o_closer,
+        tipo_da_reuni_o_com_a_closer: r.tipo_da_reuni_o_com_a_closer,
         pipeline: r.pipeline,
         is_elopement: r.is_elopement,
         title: r.title,

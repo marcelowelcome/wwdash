@@ -12,7 +12,8 @@ function deal(overrides: Partial<BoardDeal>): BoardDeal {
         data_qualificado: null,
         data_closer: null,
         data_fechamento: null,
-        reuniao_closer: null,
+        ww_como_foi_feita_reuni_o_closer: null,
+        tipo_da_reuni_o_com_a_closer: null,
         pipeline: "SDR Weddings",
         is_elopement: false,
         title: "Cliente X",
@@ -71,14 +72,22 @@ describe("computeFunnelWw — KPI counters", () => {
         expect(computeFunnelWw({ deals, range, isComplete: true }).qualificados_sdr).toBe(1);
     });
 
-    it("counts reunioes_closer requiring reuniao_closer filled and ≠ 'Não teve reunião'", () => {
+    it("counts reunioes_closer when AC live fields are filled (≠ 'Não teve reunião')", () => {
         const deals: BoardDeal[] = [
-            deal({ id: "1", data_closer: "2026-04-22T10:00:00.000Z", reuniao_closer: "Aconteceu" }),
-            deal({ id: "2", data_closer: "2026-04-23T10:00:00.000Z", reuniao_closer: "" }),
-            deal({ id: "3", data_closer: "2026-04-24T10:00:00.000Z", reuniao_closer: "Não teve reunião" }),
-            deal({ id: "4", data_closer: "2026-04-25T10:00:00.000Z", reuniao_closer: null }),
+            // tipo_da_reuni_o_com_a_closer preenchido com "Online" → conta
+            deal({ id: "1", data_closer: "2026-04-22T10:00:00.000Z", tipo_da_reuni_o_com_a_closer: "Online" }),
+            // ww_como_foi_feita_reuni_o_closer preenchido → conta
+            deal({ id: "2", data_closer: "2026-04-23T10:00:00.000Z", ww_como_foi_feita_reuni_o_closer: "Presencial" }),
+            // ambos vazios → não conta
+            deal({ id: "3", data_closer: "2026-04-24T10:00:00.000Z" }),
+            // valor "Não teve reunião" → não conta
+            deal({ id: "4", data_closer: "2026-04-25T10:00:00.000Z", ww_como_foi_feita_reuni_o_closer: "Não teve reunião" }),
+            // só whitespace → não conta
+            deal({ id: "5", data_closer: "2026-04-26T10:00:00.000Z", tipo_da_reuni_o_com_a_closer: "   " }),
+            // ambos preenchidos: 1º válido → conta uma vez
+            deal({ id: "6", data_closer: "2026-04-22T11:00:00.000Z", ww_como_foi_feita_reuni_o_closer: "Online", tipo_da_reuni_o_com_a_closer: "Presencial" }),
         ];
-        expect(computeFunnelWw({ deals, range, isComplete: true }).reunioes_closer).toBe(1);
+        expect(computeFunnelWw({ deals, range, isComplete: true }).reunioes_closer).toBe(3);
     });
 
     it("counts contratos_vol by data_fechamento", () => {
@@ -131,7 +140,7 @@ describe("computeFunnelWw — conversao_sdr_closer_pct", () => {
     it("rounds to 1 decimal", () => {
         const deals: BoardDeal[] = [
             // 1 qualificado, 1 reunião → 100%
-            deal({ id: "1", data_qualificado: "2026-04-22T10:00Z", data_closer: "2026-04-23T10:00Z", reuniao_closer: "OK" }),
+            deal({ id: "1", data_qualificado: "2026-04-22T10:00Z", data_closer: "2026-04-23T10:00Z", tipo_da_reuni_o_com_a_closer: "Online" }),
             // 2 qualificados, 1 reunião → 50%
             deal({ id: "2", data_qualificado: "2026-04-22T11:00Z" }),
             deal({ id: "3", data_qualificado: "2026-04-22T12:00Z" }),

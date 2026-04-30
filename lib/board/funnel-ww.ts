@@ -22,10 +22,22 @@ function inRange(iso: string | null, range: UtcRange): boolean {
     return t >= range.startUtc.getTime() && t <= range.endUtc.getTime();
 }
 
-function reuniaoCounts(reuniaoCloser: string | null): boolean {
-    if (reuniaoCloser === null) return false;
-    if (REUNIAO_EXCLUDE.includes(reuniaoCloser as (typeof REUNIAO_EXCLUDE)[number])) return false;
-    return true;
+// Reunião com Closer é "realizada" se houver SINAL preenchido em pelo menos
+// um dos dois campos vivos do AC, e o sinal não for "Não teve reunião".
+// Ver types.ts (BoardDeal) para a justificativa do uso de duas colunas.
+function reuniaoCounts(d: BoardDeal): boolean {
+    const candidates: Array<string | null> = [
+        d.ww_como_foi_feita_reuni_o_closer,
+        d.tipo_da_reuni_o_com_a_closer,
+    ];
+    for (const raw of candidates) {
+        if (raw === null) continue;
+        const trimmed = raw.trim();
+        if (trimmed === "") continue;
+        if ((REUNIAO_EXCLUDE as readonly string[]).includes(trimmed)) continue;
+        return true;
+    }
+    return false;
 }
 
 // ─── Main computation ───────────────────────────────────────────────────────
@@ -48,7 +60,7 @@ export function computeFunnelWw(input: ComputeWwInput): FunnelWW {
 
         if (inRange(d.created_at, range)) leads_gerados++;
         if (inRange(d.data_qualificado, range)) qualificados_sdr++;
-        if (inRange(d.data_closer, range) && reuniaoCounts(d.reuniao_closer)) reunioes_closer++;
+        if (inRange(d.data_closer, range) && reuniaoCounts(d)) reunioes_closer++;
         if (inRange(d.data_fechamento, range)) contratos_vol++;
     }
 

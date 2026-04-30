@@ -64,13 +64,14 @@ export const WW_DEFINITIONS = {
     reunioes_closer: {
         table: "deals",
         date_col: "data_closer",
+        // Detecção de "reunião realizada" usa os campos vivos do AC, não a
+        // coluna legada `reuniao_closer` (que não tem FIELD_MAP entry).
         filters: [
             "is_elopement=false",
             "title NOT ILIKE 'EW%'",
             "pipeline IN LEADS_PIPELINES",
-            "reuniao_closer NOT NULL",
-            "reuniao_closer != ''",
-            "reuniao_closer != 'Não teve reunião'",
+            "(ww_como_foi_feita_reuni_o_closer IS NOT NULL AND TRIM(ww_como_foi_feita_reuni_o_closer) NOT IN ('', 'Não teve reunião'))",
+            "OR (tipo_da_reuni_o_com_a_closer IS NOT NULL AND TRIM(tipo_da_reuni_o_com_a_closer) NOT IN ('', 'Não teve reunião'))",
         ],
     },
     contratos_vol: {

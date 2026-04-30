@@ -6,13 +6,21 @@ export type PipelineType = "wedding" | "elopement" | "trips";
 
 // Subset of `deals` columns the Board needs.
 // Kept narrow on purpose to make queries cheap and tests easy.
+//
+// IMPORTANT — closer "reunião realizada" detection:
+// The legacy column `reuniao_closer` is NOT populated by the AC sync (no
+// FIELD_MAP entry). The live signals are:
+//   - `ww_como_foi_feita_reuni_o_closer` (AC field id 299, "WW | Como foi feita Reunião Closer")
+//   - `tipo_da_reuni_o_com_a_closer`     (AC field id 19,  "Tipo da reunião com a Closer:")
+// Use either as positive signal. Empty + "Não teve reunião" → not realized.
 export interface BoardDeal {
     id: string;
     created_at: string | null;
     data_qualificado: string | null;
     data_closer: string | null;
     data_fechamento: string | null;
-    reuniao_closer: string | null;
+    ww_como_foi_feita_reuni_o_closer: string | null;
+    tipo_da_reuni_o_com_a_closer: string | null;
     pipeline: string | null;
     is_elopement: boolean | null;
     title: string | null;
