@@ -3,28 +3,48 @@
 > Plano de sprints forward-looking. Vive ao lado de `session_state.md` (estado presente) e `session_starter.md` (primer).
 > Revisar ao fim de cada sprint e ajustar prioridades conforme feedback do comercial.
 
-**Contexto:** dashboard já entregou a Jornada do Lead (v2.6.1) com fundamentos de a11y (v2.6.2, 6 commits atômicos). Próximo bloco é tirar débitos e propagar o padrão de qualidade pro resto do produto.
+**Contexto:** dashboard entregou Jornada do Lead (v2.6.1) + a11y. Sprint 1 destravou Vercel + parseNumber. Sprint INTERIM (não planejada) entregou o Board Executivo endpoint v1 + fix de detecção de reunião (v2.7.0, 2026-05-04). Próximo bloco continua sendo qualidade + dívidas.
 
 ---
 
-## 🔥 Sprint 1 — Desbloqueios críticos  (1 semana)
+## ✅ Sprint 1 — Desbloqueios críticos  (concluída em 2026-04-30)
 
 **Meta:** garantir que tudo que foi commitado chegue em produção e que a ingestão pare de corromper dados novos.
 
 ### Stories
-- [ ] **INV-01:** Investigar por que deploys do Vercel não atualizam desde `660120f`. Abrir dashboard → Deployments → ler log de build do último commit. Se falha de build, corrigir; se hook desconectado, reconectar; se env var faltando, adicionar.
-- [ ] **DW-01:** Decidir estado local do `dash-webhook`. Opções:
-  - Revisar as ~470 linhas de modificações locais nas Edge Functions + commitar `supabase/functions/_shared/` + push
-  - OU descartar tudo e reimplementar só o fix de `parseNumber` limpo em cima do último commit remoto
-- [ ] **DW-02:** Deploy das Edge Functions corrigidas (webhook + sync-deals) via `supabase functions deploy`.
-- [ ] **DATA-01:** Executar `scripts/reprocess-raw-data.mjs` (agora com `parseNumber` corrigido) pra limpar valores de `orcamento` legados no banco. Monitorar execução.
-- [ ] **CLEAN-01:** Remover safety net `recoverOrcamento` do `kpi-weddings/lib/supabase-api.ts` (vira dead code após DATA-01). Bump versão pra 2.7.0.
+- [x] **INV-01:** ✅ Resolvido em 2026-04-30. Causa-raiz: deploy travado consumindo o slot único do plano Hobby do Vercel; `wwelcome` zumbi acumulando triggers. Cancelando o deploy travado liberou a fila. Detalhado no runbook do `session_state.md` Seção A.
+- [ ] **DW-01:** Decidir estado local do `dash-webhook`. Opções: (a) revisar/commitar as ~470 linhas + `supabase/functions/_shared/`, (b) descartar e reimplementar limpo. **Status 2026-05-04:** Edge Functions deployadas via `supabase functions deploy` com o estado local atual; o `_shared/` continua untracked no git apesar de já estar em produção. Coordenar com PaNdassauro para limpar.
+- [x] **DW-02:** ✅ Deploy das Edge Functions concluído em 2026-05-04 (sync-deals + activecampaign-webhook).
+- [ ] **DATA-01:** Executar `scripts/reprocess-raw-data.mjs` em prod. **Pendente** — preferível só quando DW-01 estiver consolidado (evita reprocessar com schema desalinhado).
+- [ ] **CLEAN-01:** Remover safety net `recoverOrcamento` após DATA-01. Bump versão. **Pendente** — depende de DATA-01.
 
 ### Definition of Done
-- Vercel deploy pro commit mais recente de `main` com status Ready.
-- `dash-webhook` com trabalho local resolvido, parseNumber em produção.
-- Tabela `deals` sem valores de `orcamento ≥ R$ 1.000.000` (exceto leads legítimos >1M verificados).
-- Safety net removida e testes ainda verdes.
+- [x] Vercel deploy pro commit mais recente de `main` com status Ready.
+- [ ] `dash-webhook` com trabalho local resolvido (parseNumber está em produção via deploy do CLI, mas o git tracking continua aberto).
+- [ ] Tabela `deals` sem valores de `orcamento ≥ R$ 1.000.000` (exceto leads legítimos verificados).
+- [ ] Safety net removida e testes ainda verdes.
+
+---
+
+## ✅ Sprint INTERIM — Board Executivo endpoint  (concluída em 2026-05-04, fora do plano original)
+
+**Meta:** entregar fonte de verdade do funil para Cowork (gerador automatizado do Board Executivo Marketing semanal).
+
+### Stories
+- [x] **BOARD-01:** Endpoint `GET /api/board/weekly?brand=ww|wt&start=...&end=...` em `app/api/board/weekly/route.ts`. Auth Bearer + rate limit + audit log + ETag.
+- [x] **BOARD-02:** Camada de domínio em `lib/board/` (12 módulos puros + service-role admin client + 58 testes Vitest dedicados).
+- [x] **BOARD-03:** Migration `20260430_board_endpoint.sql`: coluna `sdr_wt_data_fechamento_taxa`, 5 índices em `deals`, tabela `board_audit_log` com cleanup pg_cron mensal.
+- [x] **BOARD-04:** Field map AC field 332 ("SDR WT - Data Fechamento Taxa") wired em `_shared/field-maps.ts` (FIELD_MAP, FIELD_KEY_MAP, DATE_COLS); Edge Functions re-deployadas.
+- [x] **BOARD-05:** Fix do dashboard: `metrics-jornada.ts`, `metrics.ts`, `funnel-utils.ts` migrados de `reuniao_closer` (dead column) para os campos vivos `ww_como_foi_feita_reuni_o_closer` + `tipo_da_reuni_o_com_a_closer`. Paridade com Board garantida.
+- [x] **BOARD-06:** Documentação canônica: `docs/board-api-briefing.md` (v1.2), `docs/cowork-instructions.md` (system prompt do consumer), `docs/cowork-kickoff-prompt.md` (kickoff do dry-run).
+- [x] **BOARD-07:** Smoke test 5 cenários (200 WW, 200 WT, 401, 400, 422) em produção. Auditoria de docs.
+
+### Pendências do consumer (Cowork)
+- [ ] **COWORK-01:** Configurar Claude Cowork com `cowork-instructions.md` + `BOARD_API_KEY`.
+- [ ] **COWORK-02:** Primeiro dry-run com `cowork-kickoff-prompt.md`. Validação cruzada com dashboard.
+- [ ] **COWORK-03:** 4 dry-runs consecutivos limpos antes do cut-over.
+- [ ] **COWORK-04:** INSERT em `monthly_targets` para `pipeline_type='trips'` (hoje retorna `targets.missing: true` em WT).
+- [ ] **COWORK-05:** Rotacionar `BOARD_API_KEY` antes do cut-over (chave vazou em chat durante setup).
 
 ---
 
