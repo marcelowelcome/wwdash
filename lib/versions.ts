@@ -7,6 +7,22 @@ export interface VersionEntry {
 
 export const VERSION_HISTORY: VersionEntry[] = [
     {
+        version: "2.7.0",
+        date: "04/05/2026",
+        description: "Endpoint /api/board/weekly v1 — fonte de verdade do funil para Cowork (Board Executivo automatizado), com paridade WW + WT e correção da detecção de reunião closer no dashboard.",
+        changes: [
+            "Novo endpoint GET /api/board/weekly?brand=ww|wt&start=YYYY-MM-DD&end=YYYY-MM-DD com 4 janelas (weekly, mtd, rolling_30d, previous_4w_avg), targets, data_freshness e kpi_definitions_hash. Auth via Bearer (BOARD_API_KEY) constant-time. Ver docs/board-api-briefing.md (v1.2).",
+            "lib/board/* (12 módulos): types, constants, period (BRT↔UTC via date-fns-tz), auth, deals-fetcher, funnel-ww, funnel-wt, data-freshness, targets, audit, rate-limit (Vercel KV + fallback in-memory), orchestrator, supabase-admin. 58 testes Vitest dedicados.",
+            "Fix do dashboard: detecção de 'reunião closer realizada' migrada da coluna legacy reuniao_closer (dead column, sem FIELD_MAP entry) para os campos vivos AC ww_como_foi_feita_reuni_o_closer (id 299) e tipo_da_reuni_o_com_a_closer (id 19). Aplica em metrics.ts, metrics-jornada.ts e funnel-utils.ts. Números de reuniões realizadas no dashboard agora batem com a verdade do AC (estavam silenciosamente 0/zero há semanas).",
+            "Field map AC: novo campo 332 'SDR WT - Data Fechamento Taxa' → coluna sdr_wt_data_fechamento_taxa. Adicionado em FIELD_MAP, FIELD_KEY_MAP e DATE_COLS no _shared/field-maps.ts do dash-webhook. Usado pelo board para computar funnel.weekly.vendas (WT).",
+            "Migration aplicada (dash-webhook/supabase/migrations/20260430_board_endpoint.sql): coluna sdr_wt_data_fechamento_taxa em deals, 5 índices em data_qualificado/data_closer/data_fechamento/sdr_wt_data_fechamento_taxa/(pipeline,created_at), tabela board_audit_log com RLS service-role-only e cleanup pg_cron mensal (12 meses retenção).",
+            "Edge Functions sync-deals e activecampaign-webhook re-deployadas via supabase CLI com _shared/field-maps.ts atualizado.",
+            "WonDeal schema estendido: pagamento_de_taxa, pagou_a_taxa, sdr_wt_data_fechamento_taxa, created_at, data_closer (todos opcionais).",
+            "Novas dependências: date-fns-tz (timezone correto BRT/UTC), @vercel/kv (rate limit; opcional, fallback in-memory funcional para dev).",
+            "Documentação: docs/board-api-briefing.md (v1.2, contrato canônico), docs/cowork-instructions.md (system prompt do consumer Claude Cowork), docs/cowork-kickoff-prompt.md (mensagem inicial do dry-run).",
+        ],
+    },
+    {
         version: "2.6.1",
         date: "16/04/2026",
         description: "Iterações no Deep Dive da Jornada: recuperação de valores legados de orçamento, novos campos e limpeza de blocos sem contexto.",
