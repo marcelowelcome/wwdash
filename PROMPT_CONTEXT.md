@@ -459,3 +459,154 @@ Primitivos visuais e views de tab que renderizam os dados do `Metrics` sem conte
   
   - ❌ Adicionar lógica de cálculo aqui (deve permanecer em `metrics.ts`).
   - ❌ Referenciar dados mutáveis (é uma definição estática).
+
+---
+
+## 9. `app/api/board/weekly/route.ts` — Board Executivo endpoint (HTTP)
+
+**Localização**
+
+- `app/api/board/weekly/route.ts`
+
+**Responsabilidades**
+
+- Validar Bearer (`BOARD_API_KEY`) com `crypto.timingSafeEqual` (constant-time)
+- Aplicar rate limit (Vercel KV; fallback in-memory para dev)
+- Validar `brand`, `start`, `end` (apenas range Mon–Sun de 7 dias na v1)
+- Delegar todo o cálculo ao `lib/board/orchestrator`
+- Renderizar `ETag` para janelas fechadas (`is_partial=false`); 304 em `If-None-Match` bate
+- Audit log fire-and-forget em `board_audit_log`
+- Mapear erros de orquestração/validação para HTTP (400/401/422/429/503/500)
+
+**Inputs esperados**
+
+```
+GET /api/board/weekly?brand=ww|wt&start=YYYY-MM-DD&end=YYYY-MM-DD
+Header: Authorization: Bearer <BOARD_API_KEY>
+```
+
+**Outputs**
+
+JSON conforme `BoardResponse` em `lib/board/types.ts`. Ver contrato canônico em [`docs/board-api-briefing.md`](./docs/board-api-briefing.md) (v1.2).
+
+**O que NÃO deve fazer**
+
+- ❌ Calcular métricas (vive em `lib/board/funnel-{ww,wt}.ts`)
+- ❌ Aceitar `?api_key=` em query string (nunca; só Bearer)
+- ❌ Logar a `BOARD_API_KEY` (nem em erro)
+- ❌ Vazar diferença entre "header ausente" e "key inválida" (sempre 401 idêntico)
+- ❌ Aceitar range que não seja Mon–Sun de 7 dias (v1; v2 muda)
+
+---
+
+## 10. `lib/board/` — Camada de domínio do Board endpoint (puro, server-side)
+
+**Estrutura**
+
+```
+lib/board/
+├── types.ts             — Brand, BoardDeal, BoardResponse, FunnelWW, FunnelWT, Targets*
+├── constants.ts         — pipelines, *_DEFINITIONS, kpi_definitions_hash, env helpers
+├── period.ts            — BRT↔UTC (date-fns-tz), validateRange, mtdRange, prev4w
+├── auth.ts              — Bearer parse + timingSafeEqual
+├── deals-fetcher.ts     — Single OR-query cobrindo 4 windows
+├── funnel-ww.ts         — Pure: (BoardDeal[], range) → FunnelWW
+├── funnel-wt.ts         — Pure: (BoardDeal[], range) → FunnelWT
+├── data-freshness.ts    — Lookup em sync_logs (ac_last_sync, syncs_in_period)
+├── targets.ts           — Lookup em monthly_targets, mapping para shape do board
+├── audit.ts             — INSERT fire-and-forget em board_audit_log
+├── rate-limit.ts        — Vercel KV (fallback in-memory)
+├── orchestrator.ts      — Composição
+└── supabase-admin.ts    — Service-role client cacheado (bypass RLS)
+```
+
+**Contratos chave**
+
+```ts
+// types.ts
+export interface BoardDeal {
+    id: string;
+    created_at: string | null;
+    data_qualificado: string | null;
+    data_closer: string | null;
+    data_fechamento: string | null;
+    ww_como_foi_feita_reuni_o_closer: string | null;  // sinal vivo de "reunião realizada"
+    tipo_da_reuni_o_com_a_closer: string | null;       // sinal vivo alternativo
+    pipeline: string | null;
+    is_elopement: boolean | null;
+    title: string | null;
+    pagamento_de_taxa: string | null;     // sinal de "taxa paga" (WT)
+    pagou_a_taxa: string | null;           // sinal alternativo
+    sdr_wt_data_fechamento_taxa: string | null;  // âncora temporal de vendas WT
+}
+
+export interface FunnelWW {
+    leads_gerados: number;
+    qualificados_sdr: number;
+    reunioes_closer: number;     // contagem detectada via 2 campos vivos AC
+    contratos_vol: number;
+    conversao_sdr_closer_pct: number | null;
+    is_complete: boolean;
+}
+
+export interface FunnelWT {
+    leads_gerados: number;
+    qualificados: number;        // aproximado: pipeline=SDR-Trips + created_at no período
+    vendas: number;              // sdr_wt_data_fechamento_taxa no período + taxa paid
+    is_complete: boolean;
+}
+```
+
+**Definições canônicas (`constants.ts`)**
+
+```ts
+LEADS_PIPELINES = ['SDR Weddings', 'Closer Weddings', 'Planejamento Weddings',
+                   'WW - Internacional', 'Outros Desqualificados | Wedding']
+TRIPS_PIPELINES = ['Consultoras TRIPS', 'SDR - Trips', 'WTN - Desqualificados']
+REUNIAO_EXCLUDE = ['Não teve reunião', '']
+BRAND_TO_PIPELINE_TYPE = { ww: 'wedding', wt: 'trips' }
+```
+
+`WW_DEFINITIONS` e `WT_DEFINITIONS` codificam coluna+filtros por KPI; SHA-256 vira `kpi_definitions_hash` na resposta. Mudou hash → mudou semântica.
+
+**Detecção de "reunião realizada"**
+
+```ts
+// funnel-ww.ts:reuniaoCounts
+function reuniaoCounts(d: BoardDeal): boolean {
+    for (const raw of [d.ww_como_foi_feita_reuni_o_closer, d.tipo_da_reuni_o_com_a_closer]) {
+        if (raw === null) continue;
+        const trimmed = raw.trim();
+        if (trimmed === '') continue;
+        if (REUNIAO_EXCLUDE.includes(trimmed)) continue;
+        return true;
+    }
+    return false;
+}
+```
+
+⚠️ **NÃO usar `d.reuniao_closer`** — coluna legacy sem FIELD_MAP entry, sempre null. Subestima reuniões silenciosamente. Ver `feedback_reuniao_closer_legacy` na memória.
+
+**Testes**
+
+`lib/board/__tests__/period.test.ts`, `auth.test.ts`, `funnel-ww.test.ts`, `funnel-wt.test.ts` — 58 testes Vitest, cobertura completa da lógica pura.
+
+**O que NÃO deve fazer**
+
+- ❌ Importar nada de `components/` ou de `metrics-jornada.ts`/`metrics.ts` (Board é independente do dashboard)
+- ❌ Fazer I/O fora de `data-freshness`, `targets`, `audit`, `deals-fetcher` e `rate-limit`
+- ❌ Mudar definições em `*_DEFINITIONS` sem bump documentado em `versions.ts` (vai mudar `kpi_definitions_hash` → Cowork detecta drift)
+- ❌ Reusar `WonDeal` para o board (BoardDeal é um subset proposital, mais cheap de fetchar)
+- ❌ Usar `mapRowToWonDeal` (deals-fetcher do board faz seu próprio mapping)
+
+---
+
+## 11. `docs/` — Documentação canônica (não é código)
+
+| File | Para |
+|---|---|
+| `docs/board-api-briefing.md` | Contrato HTTP completo do `/api/board/weekly` (v1.2). Fonte de verdade quando há dúvida sobre semântica de KPI, regra de erro ou formato de campo. |
+| `docs/cowork-instructions.md` | System prompt para o Claude Cowork (consumer). Cole no Project Instructions. |
+| `docs/cowork-kickoff-prompt.md` | Mensagem inicial para disparar o primeiro dry-run do Cowork. |
+
+**Regra de ouro:** se o briefing v1.2 e o código discordarem, o **código vence** e o briefing precisa ser atualizado para refletir. Inverso (mudar código para bater com briefing) só com bump de hash + alinhamento com o consumer.
