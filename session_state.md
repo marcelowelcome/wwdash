@@ -1,10 +1,10 @@
 # Session State — DashWW
 
-**Última atualização:** 2026-04-30 (sessão encerrada)
-**Versão em produção (kpi-weddings):** 2.6.1 + camada a11y + extensões da Jornada (avg time, executive summary, expandable lead details)
+**Última atualização:** 2026-05-04 (sessão encerrada)
+**Versão em produção (kpi-weddings):** 2.7.0 — endpoint `/api/board/weekly` v1 + fix de detecção de reunião closer
 **Branch:** `main`
-**Último commit kpi-weddings:** `12e4072`
-**Último commit dash-webhook:** `4d09807` (push: 2026-04-30)
+**Último commit kpi-weddings:** `307af10` (push: 2026-05-04, antes de série de doc updates)
+**Último commit dash-webhook:** `b3d5a22` (push: 2026-04-30 — migration board endpoint)
 
 > Documento vivo — atualize a cada sessão encerrada. Registra o *estado presente* (o que está pronto, em voo, travado).
 > A seção **Runbook** abaixo tem diagnóstico passo-a-passo dos problemas operacionais que já enfrentamos. **Consulte-a antes de gastar tempo investigando do zero.**
@@ -148,20 +148,67 @@ Em ordem cronológica:
 
 ---
 
-## Próximos passos (resumo)
+## Histórico da sessão atual (2026-05-04)
 
-1. Decidir o que fazer com o WIP não-commitado do dash-webhook (consolidar ou descartar — precisa do autor original).
-2. Decidir destino do projeto Vercel zumbi do dash-webhook (deletar ou re-deployar).
-3. Limpar `wwelcome` no Vercel (cosmético — só para parar o ❌ no GitHub status).
-4. Rodar `reprocess-raw-data.mjs` em prod assim que o WIP do dash-webhook for consolidado, e remover a safety net `recoverOrcamento` depois.
-5. Continuar Sprint 2: índices Supabase + cobertura de testes (ver [ROADMAP.md](./ROADMAP.md)).
+Em ordem cronológica:
+
+1. **Briefing técnico do Board** — Marcelo trouxe rascunho v1.0 do briefing para o endpoint `/api/board/weekly` (Cowork como consumer). Lead Tech review identificou 20 gaps em P0/P1/P2/P3; gerou v1.2 com seções 13-19 novas (rollout, ownership, runbook, error examples, roadmap, pendências).
+2. **Implementação do endpoint** — `lib/board/*` (12 módulos puros), `app/api/board/weekly/route.ts` (HTTP plumbing), 58 testes Vitest. Migration `20260430_board_endpoint.sql` no dash-webhook (col `sdr_wt_data_fechamento_taxa`, 5 índices, `board_audit_log`, cleanup pg_cron).
+3. **Field map AC field 332** — adicionado em `_shared/field-maps.ts` (FIELD_MAP, FIELD_KEY_MAP, DATE_COLS); Edge Functions `sync-deals` + `activecampaign-webhook` re-deployadas via supabase CLI.
+4. **Configuração de produção** — `BOARD_API_KEY` + `SUPABASE_SERVICE_ROLE_KEY` setadas no Vercel `weddings-kpi`; redeploy. Aplicada migration via SQL Editor do Supabase.
+5. **Smoke test inicial:** primeiro 200 retornou `reunioes_closer: 0` em todas as janelas WW — bandeira vermelha. SQL cross-check no Supabase mostrou que a coluna `reuniao_closer` é dead column (sem FIELD_MAP entry); os campos vivos do AC são `ww_como_foi_feita_reuni_o_closer` (id 299) e `tipo_da_reuni_o_com_a_closer` (id 19).
+6. **Fix board (commit `fc3ae66`):** `lib/board/funnel-ww.ts:reuniaoCounts` migrado para detectar via os 2 campos vivos (OR), com trim e exclusão de `'Não teve reunião'` e vazio. Tests atualizados.
+7. **Fix dashboard (commit `53a5ebc`):** mesma lógica aplicada em `lib/metrics-jornada.ts`, `lib/metrics.ts`, `lib/funnel-utils.ts`. Paridade restaurada — número de reuniões realizadas no dashboard corrige semanas de subestimação silenciosa.
+8. **Smoke test 5 cenários (commits 22c1e53, fc3ae66, 53a5ebc):** WW 200 com `reunioes_closer: 6`, WT 200 com kpi_caveats, 401 sem auth, 400 INVALID_RANGE, 422 INVALID_BRAND. Latência cold-start ~2s, warm ~500ms. Hashes WW=`a0e037…` e WT=`4195e9…` para baseline de drift detection.
+9. **Documentação Cowork:** `docs/cowork-instructions.md` (system prompt do Claude Cowork) e `docs/cowork-kickoff-prompt.md` (mensagem para disparar primeiro dry-run + checklist de validação).
+10. **Secrets handling:** `BOARD_API_KEY` adicionada ao `.env.local` (gitignored) e doc não-versionado em `/home/marcelo/DashWW/.secrets-cowork.md` com procedimento de rotação. Recomendada rotação antes do cut-over de produção (chave vazou em chat).
 
 ---
 
-## Snapshot de testes (fim da sessão 30/abr)
+## Histórico da sessão anterior (2026-04-30)
 
-- **kpi-weddings Vitest:** sem alteração desde 16/abr (198/203 passando, 5 falhas pré-existentes em `MonthSelector.test.tsx`).
-- **dash-webhook Vitest:** 72/72 verdes.
+Em ordem cronológica:
+
+1. **Diagnóstico inicial:** identificado bloqueador da Sprint 1 — build do dash-webhook com `fetchMetaAdsSpend(year, month, pipeline: ViewType)` chamado com 2 args em `/total`, `/trips`, `/wedding`.
+2. **Fix v1 (errado):** alteração temporária de `fetchMetaAdsSpend` para 2 args + `.is('pipeline', null)` baseada na migration `006_fix_ads_cache_pipeline.sql`. Type-check, vitest e build passaram local. **Quase commitei sem validar dados.**
+3. **Validação SQL** (a pedido do usuário): `ads_spend_cache` em prod tem **38 rows meta com `pipeline='wedding'` + 3 órfãs com `pipeline=NULL` (R$ 0)** + 29 rows google com `pipeline='wedding'`. **Convenção viva é `'wedding'`, não `null`** — o fix v1 zeraria o dashboard.
+4. **Fix v2 (Opção Y, correto):** revert do v1; `fetchGoogleAdsSpend` ganha `pipeline: ViewType` e usa `.eq` (estava lendo `.is(null)` e mostrando R$ 0 silencioso há ≥20 dias); call sites passam `'wedding'` em /total e /wedding, `'trips'` em /trips; `refresh/route.ts` cron writer passa a gravar `pipeline='wedding'` via constante `ANCHOR_PIPELINE`. Validado tsc/vitest/build, commit `4d09807`.
+5. **SQL de limpeza** das 3 órfãs `pipeline=NULL` em meta_ads — rodado pelo usuário com sucesso.
+6. **Vercel kpi-weddings desbloqueado:** deploy de `12e4072` que estava em "Pending" há 2 semanas foi destravado pelo usuário (provavelmente cancelando o deploy mais antigo da fila para liberar o slot do plano Hobby). `weddings-kpi.vercel.app` voltou a servir conteúdo fresco (`age: 105s` pós-fix).
+7. **Push do `4d09807`** no dash-webhook efetivado em origin/main.
+8. **Investigação do dash-webhook em prod (becos sem saída):** sondagem de URLs Vercel (`dash-webhook.vercel.app`, `ww-dash.vercel.app`, etc.) mostrou que o único deploy ativo (`ww-dash.vercel.app`) é zumbi — middleware redireciona tudo para `/login`, `/api/auth` retorna 404 (rota recente que não existe na build deployada). **Conclusão: dash-webhook não roda como Next.js em prod.**
+9. **Descoberta da arquitetura real:** kpi-weddings tem suas próprias rotas `/api/sync-meta-ads` e `/api/sync-google-ads`, disparadas client-side por `Dashboard.tsx` e `FunnelMetaTab.tsx` ao montar. **Não há cron**. A "última atualização em 09/abr" coincide com a última vez que alguém abriu o dashboard antes do build travar.
+10. **Validação final:** usuário abriu https://weddings-kpi.vercel.app/, sync rodou, `ads_spend_cache` voltou a atualizar. Sprint 1 fechada.
+
+---
+
+## Próximos passos (resumo)
+
+### 🔴 Imediato — validação humana (Marcelo)
+1. **Cross-check 1 semana real**: comparar `funnel.weekly` do board endpoint para 2026-04-20/26 contra os números do dashboard visual. Se bater → entrega 100% selada.
+2. **INSERT em `monthly_targets` para `pipeline_type='trips'`** — hoje retorna `targets.missing: true` em WT.
+
+### 🟡 Curto prazo — destrava ciclo do Cowork
+3. Configurar Cowork com `docs/cowork-instructions.md` + `BOARD_API_KEY` (referência: `/home/marcelo/DashWW/.secrets-cowork.md`).
+4. **Primeiro dry-run** com `docs/cowork-kickoff-prompt.md` — Cowork chama endpoint, salva JSON + hashes + .pptx, sem publicar para diretoria.
+5. **Rotacionar `BOARD_API_KEY`** antes do cut-over (chave vazou em chat).
+6. **4 dry-runs consecutivos limpos** → cut-over para produção.
+
+### 🟢 Backlog
+7. Decidir o que fazer com o WIP não-commitado do dash-webhook (`_shared/field-maps.ts` deployada via CLI mas ainda untracked no git).
+8. Decidir destino do projeto Vercel zumbi do dash-webhook (deletar ou re-deployar).
+9. Limpar `wwelcome` no Vercel (cosmético — só para parar o ❌ no GitHub status).
+10. Rodar `reprocess-raw-data.mjs` em prod e remover a safety net `recoverOrcamento` depois (Sprint 1 do ROADMAP).
+11. Aplicar `20260416_tighten_rls.sql` em prod (RLS hoje "Allow all access" — dívida de segurança).
+12. Continuar Sprint 2: índices Supabase + cobertura de testes (ver [ROADMAP.md](./ROADMAP.md)).
+13. Backfill de `sdr_wt_data_fechamento_taxa` se quiser histórico WT pré-30/abr.
+
+---
+
+## Snapshot de testes (fim da sessão 04/mai)
+
+- **kpi-weddings Vitest:** **256/261** verdes (198 anteriores + 58 do `lib/board/__tests__/` novos). Mantidas as 5 falhas pré-existentes em `MonthSelector.test.tsx` (PR #5 Google Ads, sem relação).
+- **dash-webhook Vitest:** 72/72 verdes (não houve mudança de código nesta sessão; só migration adicionada).
 - **Type-check (ambos):** limpos.
 - **Builds locais:** ambos exit 0.
-- **Produção kpi-weddings:** `12e4072` Ready, idade ~minutos.
+- **Produção kpi-weddings:** `caa22fa` Ready (último commit antes da série de doc-updates de hoje), endpoint `/api/board/weekly` respondendo 200 em <500ms warm.
