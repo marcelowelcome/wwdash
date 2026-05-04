@@ -37,7 +37,26 @@ Ambos os projetos leem/escrevem na tabela `deals`. O dashboard lê; o webhook es
   - `lib/metrics-overview.ts`, `lib/metrics-contracts.ts`, `lib/lead-score.ts`, `lib/funnel-utils.ts`
 - **UI:** `components/Dashboard.tsx` (orquestrador) + `components/dashboard/*.tsx`.
 - **Tabs:** Visão Geral, Jornada, Funil, SDR, Closer, Pipeline, Contratos, Perfil & Score, Dicionário, Chat IA.
-- **Testes:** `lib/__tests__/*.test.ts` (Vitest). 190 testes hoje.
+- **Testes:** `lib/__tests__/*.test.ts` (Vitest). 256/261 testes hoje (5 falhas pré-existentes em `MonthSelector.test.tsx` do PR #5 Google Ads).
+
+### kpi-weddings (Board endpoint v1, server-side)
+- **Endpoint público:** `app/api/board/weekly/route.ts` — `GET /api/board/weekly?brand=ww|wt&start=YYYY-MM-DD&end=YYYY-MM-DD`. Auth via `Authorization: Bearer <BOARD_API_KEY>`.
+- **Lógica em `lib/board/`:**
+  - `types.ts` — `Brand`, `BoardDeal`, `BoardResponse`, `FunnelWW`, `FunnelWT`, `Targets*`
+  - `constants.ts` — pipelines, `WW_DEFINITIONS`/`WT_DEFINITIONS`, `kpiHashFor()`, env helpers
+  - `period.ts` — `periodToUtcRange`, `validateRange`, `mtdRange`, `previous4WeeksRanges` (BRT↔UTC via `date-fns-tz`)
+  - `auth.ts` — Bearer parsing + `crypto.timingSafeEqual`
+  - `deals-fetcher.ts` — single OR-query cobre todas as 4 janelas
+  - `funnel-ww.ts` / `funnel-wt.ts` — puros, `(deals[], range) → FunnelXX`
+  - `data-freshness.ts` — query em `sync_logs` para `ac_last_sync` + `syncs_in_period`
+  - `targets.ts` — fetch de `monthly_targets` mapeado para shape do board
+  - `audit.ts` — fire-and-forget INSERT em `board_audit_log`
+  - `rate-limit.ts` — Vercel KV com fallback in-memory
+  - `orchestrator.ts` — composição
+  - `supabase-admin.ts` — service-role client cacheado
+- **Testes:** `lib/board/__tests__/` (58 testes — period, auth, funnel-ww, funnel-wt).
+- **Doc canônica:** [`docs/board-api-briefing.md`](./docs/board-api-briefing.md) (v1.2). Qualquer mudança em definição de KPI requer bump de `meta.kpi_definitions_hash`.
+- **Doc do consumer (Cowork):** [`docs/cowork-instructions.md`](./docs/cowork-instructions.md) e [`docs/cowork-kickoff-prompt.md`](./docs/cowork-kickoff-prompt.md).
 
 ### dash-webhook (ingestão)
 - **Fonte única de mapeamentos:** `supabase/functions/_shared/field-maps.ts`.
@@ -56,6 +75,9 @@ Antes de alterar algo, cheque qual documento é autoritativo:
 - **`PROMPT_CONTEXT.md`** — contratos de cada módulo (inputs, outputs, o que NÃO fazer).
 - **`lib/versions.ts`** — changelog vivo. A cada alteração significativa, adicione uma entrada no topo.
 - **`lib/metrics-definitions.ts`** — dicionário de métricas (negócio, não técnica).
+- **`docs/board-api-briefing.md`** — contrato canônico do endpoint `/api/board/weekly` (v1.2).
+- **`docs/cowork-instructions.md`** — system prompt do Claude Cowork (consumer).
+- **`docs/cowork-kickoff-prompt.md`** — mensagem inicial para disparar o primeiro dry-run.
 - **`dash-webhook/docs/DATA_DICTIONARY.md`** — dicionário dos campos do banco.
 - **`session_state.md`** — estado presente da sessão em curso.
 
