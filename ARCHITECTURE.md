@@ -71,6 +71,53 @@ Next.js page that simply renders `<Dashboard />`.
 
 ---
 
+## Board Executivo Endpoint (server-side, v2.7.0+)
+
+Independente do dashboard. Sirve a fonte de verdade do funil para consumidores externos (hoje: Claude Cowork, gerador automatizado do Board Executivo Marketing semanal). HTTP-only, sem UI.
+
+### Route — `app/api/board/weekly/route.ts`
+
+`GET /api/board/weekly?brand=ww|wt&start=YYYY-MM-DD&end=YYYY-MM-DD`. Auth via `Authorization: Bearer <BOARD_API_KEY>` (constant-time compare). Retorna envelope com `meta` (versão, hash de definições, freshness, caveats), `funnel` (4 janelas: weekly, mtd, rolling_30d, previous_4w_avg) e `targets`.
+
+Casca fina: parse params → auth → rate limit → orchestrator → ETag → audit log → response. Sem lógica de negócio.
+
+### Camada de domínio — `lib/board/`
+
+| File | Responsibility |
+|---|---|
+| `types.ts` | `Brand`, `BoardDeal`, `BoardResponse` (discriminated union por brand), `FunnelWW`, `FunnelWT`, `Targets*`, `ErrorCode`, `UtcRange` |
+| `constants.ts` | `LEADS_PIPELINES`, `TRIPS_PIPELINES`, `REUNIAO_EXCLUDE`, `BRAND_TO_PIPELINE_TYPE`, `WW_DEFINITIONS`/`WT_DEFINITIONS`, hashes SHA-256 (`kpiHashFor`), env helpers (`staleHours`, `failHours`, `rateLimitRpm`) |
+| `period.ts` | `periodToUtcRange`, `validateRange`, `mtdRange`, `rolling30dRange`, `previous4WeeksRanges`, `isPartialPeriod`, `isWindowComplete`. BRT↔UTC via `date-fns-tz` |
+| `auth.ts` | Bearer parsing + `crypto.timingSafeEqual` |
+| `deals-fetcher.ts` | Single OR-query sobre 5 colunas de data (cobre todas as 4 janelas em 1 round-trip) |
+| `funnel-ww.ts` | `computeFunnelWw`, `computeRollingWw`, `averageWwWeeks`. Pure: `(deals[], range) → FunnelWW`. Filtros base: `is_elopement=false`, `title NOT ILIKE 'EW%'`, `pipeline IN LEADS_PIPELINES`. Detecta reunião realizada via `ww_como_foi_feita_reuni_o_closer` OR `tipo_da_reuni_o_com_a_closer` (campos vivos AC, não a coluna legacy `reuniao_closer`) |
+| `funnel-wt.ts` | `computeFunnelWt`, `computeRollingWt`, `averageWtWeeks`. Pure. Vendas WT computadas com `sdr_wt_data_fechamento_taxa` no período + `pagamento_de_taxa OR pagou_a_taxa` preenchido |
+| `data-freshness.ts` | Query em `sync_logs` (Edge Function `sync-deals` insere uma linha por execução bem-sucedida); retorna `ac_last_sync` + `syncs_in_period` + flag `stale` |
+| `targets.ts` | Lookup em `monthly_targets` mapeado para shape do board (col `leads/qualificado/closer_realizada/vendas` → `leads_gerados/qualificados_sdr/reunioes_closer/contratos_vol`) |
+| `audit.ts` | Insert fire-and-forget em `board_audit_log` (não bloqueia resposta) |
+| `rate-limit.ts` | Vercel KV (Redis nativo) com fallback in-memory para dev. 10 req/min/IP por default |
+| `orchestrator.ts` | Composição: parse range → freshness → fetch deals (single broad query) → compute 4 windows → fetch targets → assemble `BoardResponse` |
+| `supabase-admin.ts` | Service-role client (bypass de RLS para `sync_logs`/`board_audit_log`) com cache lazy |
+
+### Testes — `lib/board/__tests__/`
+
+58 testes Vitest cobrindo BRT/UTC boundaries, filtros base, KPI counters, `is_partial`, conversão por zero, médias com semanas excluídas, auth constant-time. Não dependem de Supabase (puros).
+
+### Documentação canônica
+
+- [`docs/board-api-briefing.md`](./docs/board-api-briefing.md) (v1.2) — contrato HTTP completo, definições por KPI, runbook, ownership.
+- [`docs/cowork-instructions.md`](./docs/cowork-instructions.md) — system prompt do Claude Cowork.
+- [`docs/cowork-kickoff-prompt.md`](./docs/cowork-kickoff-prompt.md) — mensagem inicial para disparar o primeiro dry-run.
+
+### Schema externo necessário
+
+- Coluna `deals.sdr_wt_data_fechamento_taxa` (TIMESTAMPTZ) — populada via field 332 do AC.
+- Tabela `board_audit_log` — RLS service-role-only, cleanup mensal via pg_cron.
+- 5 índices em `deals` para performance das queries.
+- Migration: `dash-webhook/supabase/migrations/20260430_board_endpoint.sql`.
+
+---
+
 ## Communication Flow
 
 ```
@@ -117,9 +164,16 @@ Browser
 | Variable | Scope | Used by |
 |---|---|---|
 | `AC_API_KEY` | Server only | `app/api/ac/route.ts` |
-| `NEXT_PUBLIC_SUPABASE_URL` | Public | `lib/supabase.ts` |
+| `NEXT_PUBLIC_SUPABASE_URL` | Public | `lib/supabase.ts`, `lib/board/supabase-admin.ts` |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Public | `lib/supabase.ts` |
-| `SUPABASE_SERVICE_ROLE_KEY` | Server only | future server actions |
+| `SUPABASE_SERVICE_ROLE_KEY` | Server only | `lib/board/supabase-admin.ts`, sync routes |
 | `NEXT_PUBLIC_SITE_URL` | Public | CORS allow-list in `route.ts` |
 | `DASH_PASSWORD` | Server only | future auth middleware |
-| `META_ADS_*` / `GOOGLE_ADS_*` | Server only | future API integrations |
+| `META_ADS_*` / `GOOGLE_ADS_*` | Server only | sync routes (`/api/sync-meta-ads`, `/api/sync-google-ads`) |
+| `BOARD_API_KEY` | Server only | `lib/board/auth.ts` (Board endpoint Bearer) |
+| `BOARD_STALE_HOURS` | Server only | `lib/board/constants.ts` (default 6) |
+| `BOARD_FAIL_HOURS` | Server only | `lib/board/constants.ts` (default 24) |
+| `BOARD_RATE_LIMIT_RPM` | Server only | `lib/board/constants.ts` (default 10) |
+| `KV_REST_API_URL` / `KV_REST_API_TOKEN` | Server only | `lib/board/rate-limit.ts` (Vercel KV; opcional, fallback in-memory) |
+| `OPENAI_API_KEY` | Server only | `app/api/chat/route.ts` (Chat IA) |
+| `SYNC_SECRET` | Server only | `app/api/sync/route.ts` |
