@@ -315,6 +315,28 @@ function legacyEquivalent(preset: PeriodPresetId): string | null {
     }
 }
 
+// ─── Bridge para JornadaPeriod (usado pelo motor de Jornada) ───────────────
+// `JornadaPeriod` (lib/metrics-jornada.ts) usa `to` exclusivo (millisegundo
+// após o último instante do período), enquanto `PeriodRange.end` é inclusivo.
+// Compensamos com +1ms.
+export interface JornadaPeriodLite {
+    from: Date;
+    to: Date;
+    label: string;
+}
+
+export function toJornadaPeriod(
+    selection: PeriodSelection,
+    now: Date = new Date(),
+): JornadaPeriodLite {
+    const r = resolvePeriod(selection, now);
+    return {
+        from: r.start,
+        to: new Date(r.end.getTime() + 1),
+        label: r.label,
+    };
+}
+
 // ─── Test exports ───────────────────────────────────────────────────────────
 export const __testing = {
     todayBrtCalendar,

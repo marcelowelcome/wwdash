@@ -16,59 +16,19 @@ import {
     SUBVIEWS,
     computeJornada,
     computeDropout,
-    daysBackPeriod,
-    monthPeriod,
     previousPeriod,
     sliceStages,
     targetRateBetween,
     formatDaysDuration,
     JORNADA_TO_MODAL_STAGE,
 } from "@/lib/metrics-jornada";
+import { toJornadaPeriod, type PeriodSelection } from "@/lib/period-selection";
 
 interface JornadaTabProps {
     allDeals: WonDeal[];
+    period: PeriodSelection;
 }
 
-type PeriodPreset = "mes-corrente" | "mes-anterior" | "ultimos-90d" | "personalizado";
-
-const PERIOD_PRESETS: { id: PeriodPreset; label: string }[] = [
-    { id: "mes-corrente", label: "Mês corrente" },
-    { id: "mes-anterior", label: "Mês anterior" },
-    { id: "ultimos-90d", label: "Últimos 90 dias" },
-    { id: "personalizado", label: "Personalizado" },
-];
-
-function buildPeriod(preset: PeriodPreset, today: Date = new Date()): JornadaPeriod {
-    if (preset === "ultimos-90d") return daysBackPeriod(90, today);
-    const y = today.getFullYear();
-    const m = today.getMonth();
-    if (preset === "mes-anterior") return monthPeriod(y, m - 1);
-    // Mês corrente = do dia 1 até hoje (MTD), não o mês inteiro
-    const from = new Date(y, m, 1);
-    const to = new Date(y, m, today.getDate() + 1);
-    const fmt = (d: Date) =>
-        d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
-    const endInclusive = new Date(to.getTime() - 1);
-    return { from, to, label: `${fmt(from)} a ${fmt(endInclusive)}` };
-}
-
-function buildCustomPeriod(startStr: string, endStr: string): JornadaPeriod {
-    const from = new Date(startStr + "T00:00:00");
-    const end = new Date(endStr + "T00:00:00");
-    const to = new Date(end.getTime() + 24 * 60 * 60 * 1000);
-    const fmt = (d: Date) => d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
-    return { from, to, label: `${fmt(from)} a ${fmt(end)}` };
-}
-
-function todayStr(): string {
-    return new Date().toISOString().slice(0, 10);
-}
-
-function firstOfMonthStr(): string {
-    const d = new Date();
-    d.setDate(1);
-    return d.toISOString().slice(0, 10);
-}
 
 const RESP_COLOR: Record<string, string> = {
     "MKT": "#7AB8FF",
@@ -1176,84 +1136,6 @@ function ModeToggle({ mode, onChange }: { mode: JornadaMode; onChange: (m: Jorna
     );
 }
 
-function PeriodPicker({
-    preset,
-    onChange,
-    customStart,
-    customEnd,
-    onCustomChange,
-}: {
-    preset: PeriodPreset;
-    onChange: (p: PeriodPreset) => void;
-    customStart: string;
-    customEnd: string;
-    onCustomChange: (start: string, end: string) => void;
-}) {
-    const inputStyle: React.CSSProperties = {
-        background: T.surface,
-        color: T.white,
-        border: `1px solid ${T.border}`,
-        borderRadius: 6,
-        padding: "6px 10px",
-        fontSize: 12,
-        fontFamily: "inherit",
-        cursor: "pointer",
-        colorScheme: "dark",
-    };
-    return (
-        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-            <div style={{ display: "flex", gap: 0 }}>
-                {PERIOD_PRESETS.map((p, i) => (
-                    <button
-                        key={p.id}
-                        onClick={() => onChange(p.id)}
-                        aria-pressed={preset === p.id}
-                        style={{
-                            background: preset === p.id ? T.surface : "transparent",
-                            color: preset === p.id ? T.white : T.muted,
-                            border: `1px solid ${T.border}`,
-                            borderLeft: i === 0 ? `1px solid ${T.border}` : "none",
-                            borderRadius:
-                                i === 0
-                                    ? "6px 0 0 6px"
-                                    : i === PERIOD_PRESETS.length - 1
-                                        ? "0 6px 6px 0"
-                                        : "0",
-                            padding: "10px 16px",
-                            minHeight: 38,
-                            fontSize: 12,
-                            fontWeight: 600,
-                            cursor: "pointer",
-                            fontFamily: "inherit",
-                        }}
-                    >
-                        {p.label}
-                    </button>
-                ))}
-            </div>
-            {preset === "personalizado" && (
-                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                    <input
-                        type="date"
-                        value={customStart}
-                        max={customEnd}
-                        onChange={(e) => onCustomChange(e.target.value, customEnd)}
-                        style={inputStyle}
-                    />
-                    <span style={{ color: T.muted, fontSize: 11 }}>até</span>
-                    <input
-                        type="date"
-                        value={customEnd}
-                        min={customStart}
-                        onChange={(e) => onCustomChange(customStart, e.target.value)}
-                        style={inputStyle}
-                    />
-                </div>
-            )}
-        </div>
-    );
-}
-
 function rateStatus(rate: number, meta: number): "above" | "within" | "below" {
     if (rate >= meta) return "above";
     if (rate >= meta * 0.85) return "within";
@@ -1573,12 +1455,9 @@ function HeadlineStrip({
     );
 }
 
-export function JornadaTab({ allDeals }: JornadaTabProps) {
+export function JornadaTab({ allDeals, period }: JornadaTabProps) {
     const [activeView, setActiveView] = useState<SubView>("entrada-sdr");
     const [mode, setMode] = useState<JornadaMode>("coorte");
-    const [preset, setPreset] = useState<PeriodPreset>("mes-corrente");
-    const [customStart, setCustomStart] = useState<string>(firstOfMonthStr);
-    const [customEnd, setCustomEnd] = useState<string>(todayStr);
     const [modalStage, setModalStage] = useState<StageStats | null>(null);
     const [deepDiveStage, setDeepDiveStage] = useState<StageStats | null>(null);
     const [display, setDisplay] = useState<Display>("narrada");
@@ -1588,10 +1467,9 @@ export function JornadaTab({ allDeals }: JornadaTabProps) {
         [allDeals],
     );
 
-    const periodo = useMemo(
-        () => (preset === "personalizado" ? buildCustomPeriod(customStart, customEnd) : buildPeriod(preset)),
-        [preset, customStart, customEnd],
-    );
+    // Período vem do seletor global do header (PeriodSelection). Convertido
+    // para JornadaPeriod (from inclusivo, to exclusivo) via toJornadaPeriod.
+    const periodo: JornadaPeriod = useMemo(() => toJornadaPeriod(period), [period]);
     const periodoAnterior = useMemo(() => previousPeriod(periodo), [periodo]);
 
     const jornada = useMemo(() => computeJornada(wwDeals, periodo, mode), [wwDeals, periodo, mode]);
@@ -1641,15 +1519,6 @@ export function JornadaTab({ allDeals }: JornadaTabProps) {
                 <ModeToggle mode={mode} onChange={setMode} />
             </div>
 
-            <div style={{ marginBottom: 18 }}>
-                <PeriodPicker
-                    preset={preset}
-                    onChange={setPreset}
-                    customStart={customStart}
-                    customEnd={customEnd}
-                    onCustomChange={(s, e) => { setCustomStart(s); setCustomEnd(e); }}
-                />
-            </div>
 
             <MiniFunnel
                 stages={jornada.stages}

@@ -470,7 +470,7 @@ export default function Dashboard() {
                 {tab === "perfil-score" && <PerfilScoreTab wonDeals={wonDeals} closerDeals={closerDeals} sdrDeals={sdrDeals} fieldMap={acFieldMap} />}
                 {tab === "dictionary" && <DictionaryTab />}
                 {tab === "funnel-metas" && <FunnelMetaTab allDeals={allDeals} />}
-                {tab === "jornada" && <JornadaTab allDeals={allDeals} />}
+                {tab === "jornada" && <JornadaTab allDeals={allDeals} period={periodSelection} />}
                 {tab === "chat" && (
                     <ChatTab
                         messages={chat.messages}
