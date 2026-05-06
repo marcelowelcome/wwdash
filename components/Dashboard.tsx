@@ -180,9 +180,17 @@ function Header({ tab, setTab, metrics, loading, lastUpdate, onRefresh, onVersio
                         {t.label}
                     </button>
                 ))}
-                <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 4, padding: "0 4px" }}>
-                    <PeriodSelector value={period} onChange={onPeriodChange} />
-                </div>
+                {/*
+                    O seletor global "Janela" é escondido em abas que operam
+                    nativamente por mês (e não por range arbitrário). Hoje
+                    apenas a aba "Funil de Metas" se enquadra — ela tem seu
+                    próprio MonthSelector + fetches por (year, month).
+                */}
+                {tab !== "funnel-metas" && (
+                    <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 4, padding: "0 4px" }}>
+                        <PeriodSelector value={period} onChange={onPeriodChange} />
+                    </div>
+                )}
             </div>
         </div>
     );
