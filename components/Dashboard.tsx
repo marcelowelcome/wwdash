@@ -1,6 +1,14 @@
 "use client";
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
-import { fetchAllDealsFromDb, fetchFieldMetaFromDb, fetchStagesFromDb, fetchWonDealsFromDb, CLOSER_GROUP_ID, type GlobalPeriod, DEFAULT_GLOBAL_PERIOD, PERIOD_OPTIONS, periodToDaysBack } from "@/lib/supabase-api";
+import { fetchAllDealsFromDb, fetchFieldMetaFromDb, fetchStagesFromDb, fetchWonDealsFromDb, CLOSER_GROUP_ID } from "@/lib/supabase-api";
+import {
+    DEFAULT_SELECTION,
+    loadPeriodFromStorage,
+    resolvePeriod,
+    savePeriodToStorage,
+    type PeriodSelection,
+} from "@/lib/period-selection";
+import { PeriodSelector } from "@/components/dashboard/PeriodSelector";
 import { supabase } from "@/lib/supabase";
 import { computeMetrics, type Metrics } from "@/lib/metrics";
 import { T, statusColor } from "./dashboard/theme";
@@ -72,8 +80,8 @@ interface HeaderProps {
     syncing: boolean;
     syncResult: { synced?: number; error?: string } | null;
     lastSyncLog: SyncLog | null;
-    globalPeriod: GlobalPeriod;
-    onPeriodChange: (p: GlobalPeriod) => void;
+    period: PeriodSelection;
+    onPeriodChange: (selection: PeriodSelection) => void;
 }
 
 function formatSyncAge(iso: string): string {
@@ -86,7 +94,7 @@ function formatSyncAge(iso: string): string {
     return `${Math.floor(h / 24)}d atrás`;
 }
 
-function Header({ tab, setTab, metrics, loading, lastUpdate, onRefresh, onVersionClick, onSync, syncing, syncResult, lastSyncLog, globalPeriod, onPeriodChange }: HeaderProps) {
+function Header({ tab, setTab, metrics, loading, lastUpdate, onRefresh, onVersionClick, onSync, syncing, syncResult, lastSyncLog, period, onPeriodChange }: HeaderProps) {
     return (
         <div style={{ background: T.surface, borderBottom: `1px solid ${T.border}`, padding: "0 28px" }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", maxWidth: 1200, margin: "0 auto", padding: "16px 0" }}>
@@ -173,26 +181,7 @@ function Header({ tab, setTab, metrics, loading, lastUpdate, onRefresh, onVersio
                     </button>
                 ))}
                 <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 4, padding: "0 4px" }}>
-                    <span style={{ fontSize: 9, color: T.muted, marginRight: 2 }}>Janela:</span>
-                    {PERIOD_OPTIONS.map(opt => (
-                        <button
-                            key={opt.value}
-                            onClick={() => onPeriodChange(opt.value)}
-                            style={{
-                                background: globalPeriod === opt.value ? `${T.gold}20` : "transparent",
-                                color: globalPeriod === opt.value ? T.gold : T.muted,
-                                border: globalPeriod === opt.value ? `1px solid ${T.gold}55` : "1px solid transparent",
-                                borderRadius: 4,
-                                padding: "2px 8px",
-                                fontSize: 9,
-                                fontWeight: 600,
-                                cursor: "pointer",
-                                fontFamily: "inherit",
-                            }}
-                        >
-                            {opt.label}
-                        </button>
-                    ))}
+                    <PeriodSelector value={period} onChange={onPeriodChange} />
                 </div>
             </div>
         </div>
@@ -221,26 +210,23 @@ export default function Dashboard() {
     const [lastSyncLog, setLastSyncLog] = useState<SyncLog | null>(null);
     const chat = useChat();
 
-    // Global period filter (persisted in localStorage)
-    const [globalPeriod, setGlobalPeriod] = useState<GlobalPeriod>(() => {
-        if (typeof window === "undefined") return DEFAULT_GLOBAL_PERIOD;
-        const stored = localStorage.getItem("ww-global-period");
-        if (stored) {
-            const val = parseInt(stored, 10);
-            if ([30, 90, 180, 365, 0].includes(val)) return val as GlobalPeriod;
-        }
-        return DEFAULT_GLOBAL_PERIOD;
+    // Global period filter (persisted in localStorage; migra do schema antigo)
+    const [periodSelection, setPeriodSelection] = useState<PeriodSelection>(() => {
+        if (typeof window === "undefined") return DEFAULT_SELECTION;
+        return loadPeriodFromStorage();
     });
-    const handlePeriodChange = useCallback((p: GlobalPeriod) => {
-        setGlobalPeriod(p);
-        localStorage.setItem("ww-global-period", String(p));
+    const handlePeriodChange = useCallback((selection: PeriodSelection) => {
+        setPeriodSelection(selection);
+        savePeriodToStorage(selection);
     }, []);
 
     // Fetch pre-computed metrics from server API (cached, stale-while-revalidate)
     const loadFromServer = useCallback(async (): Promise<boolean> => {
         try {
             setLoadStep("Carregando métricas do servidor…");
-            const resp = await fetch(`/api/metrics?period=${globalPeriod}`);
+            const range = resolvePeriod(periodSelection);
+            const url = `/api/metrics?start=${encodeURIComponent(range.start.toISOString())}&end=${encodeURIComponent(range.end.toISOString())}`;
+            const resp = await fetch(url);
             if (!resp.ok) return false;
             const data = await resp.json();
             if (!data.metrics) return false;
@@ -258,21 +244,22 @@ export default function Dashboard() {
             console.warn("[Dashboard] Server metrics unavailable, falling back to direct queries:", e);
             return false;
         }
-    }, [globalPeriod]);
+    }, [periodSelection]);
 
     // Direct Supabase queries (fallback when server metrics unavailable)
     const loadFromSupabase = useCallback(async () => {
         setLoadStep("Carregando dados…");
-        const daysBack = periodToDaysBack(globalPeriod);
+        const range = resolvePeriod(periodSelection);
+        const fetchRange = { start: range.start, end: range.end };
 
         // Fetch all data sources in parallel — use allSettled so partial failures
         // don't discard all data (e.g. sync_logs failing shouldn't block the dashboard)
         const results = await Promise.allSettled([
             fetchFieldMetaFromDb(),                             // 0
             fetchStagesFromDb(),                                // 1
-            fetchAllDealsFromDb("1", daysBack),                 // 2 SDR P1
-            fetchAllDealsFromDb("3", daysBack),                 // 3 SDR P3
-            fetchAllDealsFromDb(CLOSER_GROUP_ID, daysBack),     // 4 Closer
+            fetchAllDealsFromDb("1", fetchRange),               // 2 SDR P1
+            fetchAllDealsFromDb("3", fetchRange),               // 3 SDR P3
+            fetchAllDealsFromDb(CLOSER_GROUP_ID, fetchRange),   // 4 Closer
             fetchWonDealsFromDb(CLOSER_GROUP_ID),               // 5 Won (always all time)
             supabase.from("sync_logs").select("*").order("id", { ascending: false }).limit(1), // 6
         ]);
@@ -318,7 +305,7 @@ export default function Dashboard() {
         }
 
         setLastUpdate(new Date().toLocaleTimeString("pt-BR"));
-    }, [globalPeriod]);
+    }, [periodSelection]);
 
     const loadData = useCallback(async () => {
         setLoading(true);
@@ -415,7 +402,7 @@ export default function Dashboard() {
         syncing,
         syncResult,
         lastSyncLog,
-        globalPeriod,
+        period: periodSelection,
         onPeriodChange: handlePeriodChange,
     };
 

@@ -173,17 +173,31 @@ function mapRowToWonDeal(row: any, groupIdFallback?: string, includeCf = false):
 // ─── DEAL FETCHERS ─────────────────────────────────────────────────────────────
 
 /**
+ * Tipo aceito por `fetchAllDealsFromDb`. Pode ser um número de dias atrás
+ * (legacy) ou um range explícito UTC. Range explícito permite presets de
+ * calendário precisos ("Esta semana", "Mês passado") sem aproximação.
+ */
+export type FetchRange = number | { start: Date; end: Date };
+
+/**
  * Fetches deals from Supabase and transforms them into the Deal schema.
  * @param groupId The ID of the group (e.g., '1' for SDR Weddings, '3' for Closer Weddings)
- * @param daysBack How many days back to fetch data
+ * @param range  Or `daysBack` (number) for legacy compat, or `{start, end}` UTC range.
  */
 export async function fetchAllDealsFromDb(
     groupId: string,
-    daysBack = 180
+    range: FetchRange = 180
 ): Promise<WonDeal[]> {
-    const after = new Date();
-    after.setDate(after.getDate() - daysBack);
-    const afterStr = after.toISOString();
+    let afterStr: string;
+    let beforeStr: string | null = null;
+    if (typeof range === "number") {
+        const after = new Date();
+        after.setDate(after.getDate() - range);
+        afterStr = after.toISOString();
+    } else {
+        afterStr = range.start.toISOString();
+        beforeStr = range.end.toISOString();
+    }
 
     let allRows: any[] = [];
     let from = 0;
@@ -199,11 +213,13 @@ export async function fetchAllDealsFromDb(
     let pages = 0;
     while (pages < maxPages) {
         pages++;
-        const { data, error } = await supabase
+        let query = supabase
             .from("deals")
             .select(DEAL_COLUMNS)
             .or(groupFilter)
-            .gte("created_at", afterStr)
+            .gte("created_at", afterStr);
+        if (beforeStr) query = query.lte("created_at", beforeStr);
+        const { data, error } = await query
             .order("created_at", { ascending: false })
             .range(from, from + limit - 1);
 

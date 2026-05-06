@@ -35,28 +35,56 @@ interface CachedPayload {
   computedAt: string;
 }
 
-// ─── IN-MEMORY CACHE (keyed by period) ─────────────────────────────────────
+// ─── IN-MEMORY CACHE (keyed by ISO range) ─────────────────────────────────
 
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 const STALE_TTL_MS = 10 * 60 * 1000; // 10 minutes
 
-const cache = new Map<number, { data: CachedPayload; at: number }>();
-const revalidatingSet = new Set<number>();
+// Cache key é "<startISO>|<endISO>" (ou "legacy:<period>" para chamadas antigas).
+// Usamos string para suportar ranges arbitrários (presets de calendário,
+// custom ranges) sem amassar tudo em "daysBack".
+const cache = new Map<string, { data: CachedPayload; at: number }>();
+const revalidatingSet = new Set<string>();
 
 const VALID_PERIODS = new Set([30, 90, 180, 365, 0]);
 
-// ─── DATA FETCHER ──────────────────────────────────────────────────────────
+interface ResolvedRange {
+  cacheKey: string;
+  range: { start: Date; end: Date };
+}
 
-async function fetchAndCompute(period: number): Promise<CachedPayload> {
+function rangeFromLegacyPeriod(period: number): ResolvedRange {
   const validPeriod = VALID_PERIODS.has(period) ? period : 180;
   const daysBack = periodToDaysBack(validPeriod as import("@/lib/supabase-api").GlobalPeriod);
+  const end = new Date();
+  const start = new Date(end);
+  start.setDate(start.getDate() - daysBack);
+  return {
+    cacheKey: `legacy:${validPeriod}`,
+    range: { start, end },
+  };
+}
 
+function rangeFromIsoParams(startStr: string, endStr: string): ResolvedRange | null {
+  const start = new Date(startStr);
+  const end = new Date(endStr);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null;
+  if (end.getTime() < start.getTime()) return null;
+  return {
+    cacheKey: `${start.toISOString()}|${end.toISOString()}`,
+    range: { start, end },
+  };
+}
+
+// ─── DATA FETCHER ──────────────────────────────────────────────────────────
+
+async function fetchAndCompute(range: { start: Date; end: Date }): Promise<CachedPayload> {
   const results = await Promise.allSettled([
     fetchFieldMetaFromDb(),
     fetchStagesFromDb(),
-    fetchAllDealsFromDb("1", daysBack),
-    fetchAllDealsFromDb("3", daysBack),
-    fetchAllDealsFromDb(CLOSER_GROUP_ID, daysBack),
+    fetchAllDealsFromDb("1", range),
+    fetchAllDealsFromDb("3", range),
+    fetchAllDealsFromDb(CLOSER_GROUP_ID, range),
     fetchWonDealsFromDb(CLOSER_GROUP_ID), // always all time
     supabase.from("sync_logs").select("*").order("id", { ascending: false }).limit(1),
   ]);
@@ -100,39 +128,61 @@ async function fetchAndCompute(period: number): Promise<CachedPayload> {
 // ─── BACKGROUND REVALIDATION ────────────────────────────────────────────────
 
 const BACKOFF_MS = 30_000; // 30s backoff after failed revalidation
-const failedAt = new Map<number, number>(); // period → timestamp of last failure
+const failedAt = new Map<string, number>(); // cacheKey → timestamp of last failure
 
-function triggerRevalidation(period: number) {
-  if (revalidatingSet.has(period)) return;
-  // Backoff: skip if last failure was recent
-  const lastFail = failedAt.get(period) || 0;
+function triggerRevalidation(resolved: ResolvedRange) {
+  const { cacheKey, range } = resolved;
+  if (revalidatingSet.has(cacheKey)) return;
+  const lastFail = failedAt.get(cacheKey) || 0;
   if (Date.now() - lastFail < BACKOFF_MS) return;
 
-  revalidatingSet.add(period);
-  fetchAndCompute(period)
+  revalidatingSet.add(cacheKey);
+  fetchAndCompute(range)
     .then((payload) => {
-      cache.set(period, { data: payload, at: Date.now() });
-      failedAt.delete(period); // clear backoff on success
+      cache.set(cacheKey, { data: payload, at: Date.now() });
+      failedAt.delete(cacheKey);
     })
     .catch((err) => {
-      console.error(`[api/metrics] Revalidation failed for period=${period}:`, err);
-      failedAt.set(period, Date.now()); // set backoff timer
+      console.error(`[api/metrics] Revalidation failed for key=${cacheKey}:`, err);
+      failedAt.set(cacheKey, Date.now());
     })
     .finally(() => {
-      revalidatingSet.delete(period);
+      revalidatingSet.delete(cacheKey);
     });
 }
 
 // ─── GET ────────────────────────────────────────────────────────────────────
+//
+// Aceita 2 formatos de query:
+//   1. Novo: ?start=<ISO>&end=<ISO>  (preferido)
+//   2. Legacy: ?period=<30|90|180|365|0>  (mapeado para um range relativo)
+// Se ambos vierem, `start/end` ganha. Se nenhum, usa period=180.
 
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
-    const periodParam = parseInt(searchParams.get("period") || "180", 10);
-    const period = VALID_PERIODS.has(periodParam) ? periodParam : 180;
+    const startParam = searchParams.get("start");
+    const endParam = searchParams.get("end");
 
+    let resolved: ResolvedRange;
+    if (startParam && endParam) {
+      const r = rangeFromIsoParams(startParam, endParam);
+      if (!r) {
+        return NextResponse.json(
+          { error: "Parâmetros start/end inválidos" },
+          { status: 400 },
+        );
+      }
+      resolved = r;
+    } else {
+      const periodParam = parseInt(searchParams.get("period") || "180", 10);
+      const period = VALID_PERIODS.has(periodParam) ? periodParam : 180;
+      resolved = rangeFromLegacyPeriod(period);
+    }
+
+    const { cacheKey, range } = resolved;
     const now = Date.now();
-    const entry = cache.get(period);
+    const entry = cache.get(cacheKey);
     const age = entry ? now - entry.at : Infinity;
 
     // Cache HIT (fresh)
@@ -142,31 +192,34 @@ export async function GET(request: Request) {
           "Cache-Control": "public, s-maxage=300, stale-while-revalidate=600",
           "X-Cache": "HIT",
           "X-Cache-Age": String(Math.round(age / 1000)),
+          "X-Cache-Key": cacheKey,
         },
       });
     }
 
     // Cache STALE — return stale data, revalidate in background
     if (entry && age < STALE_TTL_MS) {
-      triggerRevalidation(period);
+      triggerRevalidation(resolved);
       return NextResponse.json(entry.data, {
         headers: {
           "Cache-Control": "public, s-maxage=300, stale-while-revalidate=600",
           "X-Cache": "STALE",
           "X-Cache-Age": String(Math.round(age / 1000)),
+          "X-Cache-Key": cacheKey,
         },
       });
     }
 
     // Cache MISS — fetch synchronously
-    const payload = await fetchAndCompute(period);
-    cache.set(period, { data: payload, at: Date.now() });
+    const payload = await fetchAndCompute(range);
+    cache.set(cacheKey, { data: payload, at: Date.now() });
 
     return NextResponse.json(payload, {
       headers: {
         "Cache-Control": "public, s-maxage=300, stale-while-revalidate=600",
         "X-Cache": "MISS",
         "X-Cache-Age": "0",
+        "X-Cache-Key": cacheKey,
       },
     });
   } catch (error) {
