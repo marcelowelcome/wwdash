@@ -122,6 +122,13 @@ export interface SDRMetrics {
 
 export type PeriodFilter = "week" | "4weeks" | "3months" | "full";
 
+/**
+ * Aceita o preset legacy (string) ou um range concreto `{start, end}`.
+ * O caller (Dashboard/SDRTab) passa `{start, end}` derivado do
+ * `<PeriodSelector />` global; testes legados ainda passam strings.
+ */
+export type SDRPeriodInput = PeriodFilter | { start: Date; end: Date };
+
 /** Returns the Monday 00:00:00 for the week containing date d */
 function getMonday(d: Date): Date {
     const day = d.getDay();
@@ -184,7 +191,7 @@ function emptyDayBucket(): DayBucket {
 export function computeSDRMetrics(
     deals: Deal[],
     fieldMap: Record<string, string>,
-    filter: PeriodFilter
+    period: SDRPeriodInput
 ): SDRMetrics {
     const now = new Date();
 
@@ -209,7 +216,10 @@ export function computeSDRMetrics(
         return { start, end };
     };
 
-    const periodRange = getRange(filter);
+    const periodRange =
+        typeof period === "string"
+            ? getRange(period)
+            : { start: period.start, end: period.end };
     const currentMon = getRange("week").start;
 
     // Previous period range (same duration, immediately before)

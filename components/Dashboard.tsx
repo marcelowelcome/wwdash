@@ -61,7 +61,7 @@ const TABS: { id: TabId; label: string }[] = [
  * etc.) e portanto NÃO mostram o seletor "Janela" global. Adicionar aqui
  * conforme abas evoluírem para terem seu próprio controle.
  */
-const TABS_WITH_LOCAL_PERIOD = new Set<TabId>(["funnel-metas", "sdr"]);
+const TABS_WITH_LOCAL_PERIOD = new Set<TabId>(["funnel-metas"]);
 
 // ─── HEADER ───────────────────────────────────────────────────────────────────
 interface SyncLog {
@@ -477,7 +477,7 @@ export default function Dashboard() {
             <div style={{ maxWidth: 1200, margin: "0 auto", padding: "24px 28px 48px" }}>
                 <TabErrorBoundary key={tab} tabLabel={TABS.find(t => t.id === tab)?.label}>
                 {tab === "overview" && <OverviewTab sdrDeals={sdrDeals} closerDeals={closerDeals} wonDeals={wonDeals} fieldMap={acFieldMap} stageMap={acStageMap} allDeals={allDeals} period={periodSelection} />}
-                {tab === "sdr" && <SDRTab deals={sdrDeals} fieldMap={acFieldMap} />}
+                {tab === "sdr" && <SDRTab deals={sdrDeals} fieldMap={acFieldMap} period={periodSelection} />}
                 {tab === "funnel" && <FunnelTab m={metrics} />}
                 {tab === "closer" && <CloserTab m={metrics} />}
                 {tab === "pipeline" && <PipelineTab m={metrics} />}

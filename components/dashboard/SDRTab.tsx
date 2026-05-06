@@ -9,7 +9,8 @@ import {
 import { SectionTitle } from "./SectionTitle";
 import { CustomTooltip } from "./CustomTooltip";
 import { T } from "./theme";
-import { type SDRMetrics, type PeriodFilter, computeSDRMetrics } from "@/lib/metrics-sdr";
+import { type SDRMetrics, computeSDRMetrics } from "@/lib/metrics-sdr";
+import { resolvePeriod, type PeriodSelection } from "@/lib/period-selection";
 import { type Deal } from "@/lib/schemas";
 import { ownerName } from "@/lib/supabase-api";
 
@@ -421,16 +422,20 @@ function MotivosSection({ motivosCards }: { motivosCards: SDRMetrics["motivosCar
 interface SDRTabProps {
     deals: Deal[];
     fieldMap: Record<string, string>;
+    period: PeriodSelection;
 }
 
-export function SDRTab({ deals, fieldMap }: SDRTabProps) {
-    const [filter, setFilter] = useState<PeriodFilter>("4weeks");
+export function SDRTab({ deals, fieldMap, period }: SDRTabProps) {
     const [selectedDay, setSelectedDay] = useState<number | null>(null);
     const [investigateOpen, setInvestigateOpen] = useState(false);
 
-    const m = useMemo(() => computeSDRMetrics(deals, fieldMap, filter), [deals, fieldMap, filter]);
-
-    const periodLabel = filter === "week" ? "Semana Atual" : filter === "4weeks" ? "Ultimas 4 Semanas" : filter === "3months" ? "Ultimos 3 Meses" : "Historico Completo";
+    // Período vem do seletor global do header. Usado pelo motor para
+    // calcular KPIs agregados e o "período anterior" (mesma duração).
+    const range = useMemo(() => resolvePeriod(period), [period]);
+    const m = useMemo(
+        () => computeSDRMetrics(deals, fieldMap, { start: range.start, end: range.end }),
+        [deals, fieldMap, range],
+    );
 
     // Aggregated KPIs from dailyTrend
     const kpis = useMemo(() => {
@@ -458,24 +463,6 @@ export function SDRTab({ deals, fieldMap }: SDRTabProps) {
 
     return (
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-
-            {/* ── 1. PERIOD FILTER ──────────────────────────────────────────── */}
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: 5 }}>
-                {(["week", "4weeks", "3months", "full"] as PeriodFilter[]).map(f => (
-                    <button
-                        key={f}
-                        onClick={() => { setFilter(f); setSelectedDay(null); }}
-                        style={{
-                            padding: "5px 12px", borderRadius: 6, border: "none", cursor: "pointer",
-                            fontSize: 11, fontWeight: 600, transition: "all 0.15s",
-                            background: filter === f ? T.gold : "rgba(255,255,255,0.06)",
-                            color: filter === f ? "#000" : T.muted,
-                        }}
-                    >
-                        {f === "week" ? "Semana" : f === "4weeks" ? "4 Semanas" : f === "3months" ? "3 Meses" : "Completo"}
-                    </button>
-                ))}
-            </div>
 
             {/* ── 2. ALERT BANNER ───────────────────────────────────────────── */}
             {m.anomaly?.alert && (
