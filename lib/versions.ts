@@ -7,6 +7,29 @@ export interface VersionEntry {
 
 export const VERSION_HISTORY: VersionEntry[] = [
     {
+        version: "2.8.0",
+        date: "06/05/2026",
+        description: "Redesign completo da aba SDR como dashboard de growth marketing — funil de 6 etapas (Lead → MQL → Agendamento → Reunião → Qualificação → Closer) com comparação tripla (atual × meta prorrateada × período anterior), bloco de investimento + CPL, modo Coorte/Evento e DealsModal por etapa.",
+        changes: [
+            "Novo funil de 6 etapas em hero scannable, cada card mostra valor grande + delta vs período anterior + barra de atingimento de meta. Click em qualquer card abre o DealsModal com a lista filtrada de deals daquela etapa.",
+            "Lead = todo deal criado em pipelines WW (5 pipelines, exclui elopement e títulos EW%); MQL = subset que entrou em pipelines SDR válidos (exclui Internacional/Desqualificados). A taxa Lead→MQL no chevron sinaliza eficácia do filtro de pré-qualificação.",
+            "Toggle Coorte/Evento (espelha o padrão da Jornada). Coorte: leads criados no período + onde estão hoje. Evento: o que aconteceu no período (default). Persistido em localStorage.",
+            "Comparação contra meta: monthly_targets prorrateado linearmente (target_periodo = monthly × dias_periodo / dias_no_mes_de_end). CPL target NÃO prorrateia (é taxa).",
+            "Comparação contra período anterior: mesma duração imediatamente antes (ex: 'Últimos 7 dias' vs '7 dias antes disso').",
+            "Custo por MQL (CPL) = (spend Meta + Google) ÷ MQL no período. Card dedicado com meta cpl + delta vs ant. Cor invertida (verde = abaixo da meta).",
+            "Investimento mídia: total + breakdown Meta/Google + delta vs período anterior + meta prorrateada (target_total = cpl × mql_target).",
+            "Banner de alertas no topo da aba lista campos sem meta no monthly_targets, spend parcial em ads_daily_cache, sync com AC atrasada (>6h).",
+            "Investigation Panel preservado (decomposição volume × taxa, breakdown por SDR, motivos de variação) — abre dentro da aba abaixo do funil.",
+            "Removidos: Daily Trend Chart com drill-down, DOW Heatmap, Motivos cards (≈ 350 linhas de UI legacy). Os shapes legacy de SDRMetrics permanecem para back-compat dos 24 testes legados.",
+            "lib/metrics-sdr.ts: novo tipo `SDRFunnelDetailed` com `{current, previous, target, deals}` por etapa, `SDRSpendBlock`, `SDRCplBlock`, `SDRMissingData`. Função aceita `options: { mode, targets, spend, previousSpend, daysInTargetMonth, staleSync, spendPartial }`.",
+            "lib/supabase-api.ts: novo `fetchAdsSpendByRange(start, end)` agrega ads_daily_cache atravessando fronteiras de mês e detecta gap (partial=true).",
+            "components/Dashboard.tsx: useEffect dispara fetch paralelo de monthly_targets + spend (atual e período anterior) ao mudar periodSelection. Passa props para SDRTab.",
+            "Direção visual: Ultra-modern, calm, tactile — typography hierárquica (números fontWeight 200), padding generoso, hover com translateY(-2px) + sombra, transitions 200ms ease, paleta calma (T.gold reservado para hero metrics).",
+            "Acessibilidade: cards do funil são <button> (Enter/Space ativa), aria-pressed no ModeToggle, banner com role='status'.",
+            "26 testes novos em lib/__tests__/metrics-sdr-v2.test.ts cobrindo Lead/MQL filter, modos coorte/evento (inclusive divergência em Agendamento), prorrateio de target, CPL, missingData. 24 testes legados continuam passando.",
+        ],
+    },
+    {
         version: "2.7.0",
         date: "04/05/2026",
         description: "Endpoint /api/board/weekly v1 — fonte de verdade do funil para Cowork (Board Executivo automatizado), com paridade WW + WT e correção da detecção de reunião closer no dashboard.",

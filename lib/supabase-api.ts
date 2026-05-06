@@ -821,6 +821,89 @@ export async function fetchAdsCampaignData(
 /**
  * Fetches daily data merged by date for chart consumption.
  */
+/**
+ * Soma o spend (Meta + Google) cobrindo um range arbitrário [start, end] em UTC.
+ * Atravessa fronteiras de mês fazendo `fetchAdsDailyData` por cada mês incluído
+ * e filtrando apenas os dias dentro do range. Retorna também `partial=true`
+ * quando algum dia esperado no range não tem nenhuma linha no `ads_daily_cache`
+ * (sinal pra UI mostrar "spend parcial" no banner de alertas).
+ */
+export async function fetchAdsSpendByRange(
+    start: Date,
+    end: Date
+): Promise<{ meta: number; google: number; total: number; partial: boolean }> {
+    const startBrt = brtCalendarDay(start);
+    const endBrt = brtCalendarDay(end);
+
+    // Coleta meses únicos cobertos pelo range.
+    const months: { year: number; month: number }[] = [];
+    {
+        const [sy, sm] = startBrt.split("-").map(Number);
+        const [ey, em] = endBrt.split("-").map(Number);
+        let y = sy;
+        let m = sm;
+        while (y < ey || (y === ey && m <= em)) {
+            months.push({ year: y, month: m });
+            m++;
+            if (m > 12) { m = 1; y++; }
+        }
+    }
+
+    const allRows: { date: string; source: "meta_ads" | "google_ads"; spend: number }[] = [];
+    for (const { year, month } of months) {
+        const rows = await fetchAdsDailyData(year, month);
+        for (const r of rows) {
+            if (r.date >= startBrt && r.date <= endBrt) {
+                allRows.push({ date: r.date, source: r.source, spend: r.spend });
+            }
+        }
+    }
+
+    let meta = 0;
+    let google = 0;
+    const datesWithData = new Set<string>();
+    for (const r of allRows) {
+        datesWithData.add(r.date);
+        if (r.source === "meta_ads") meta += r.spend;
+        else google += r.spend;
+    }
+
+    // Detecta se algum dia do range não tem entrada (parcial).
+    const expectedDays: string[] = [];
+    {
+        const [sy, sm, sd] = startBrt.split("-").map(Number);
+        const cur = new Date(Date.UTC(sy, sm - 1, sd));
+        while (true) {
+            const y = cur.getUTCFullYear();
+            const m = String(cur.getUTCMonth() + 1).padStart(2, "0");
+            const d = String(cur.getUTCDate()).padStart(2, "0");
+            const iso = `${y}-${m}-${d}`;
+            expectedDays.push(iso);
+            if (iso === endBrt) break;
+            cur.setUTCDate(cur.getUTCDate() + 1);
+        }
+    }
+    const partial = expectedDays.some((d) => !datesWithData.has(d));
+
+    return {
+        meta: Math.round(meta * 100) / 100,
+        google: Math.round(google * 100) / 100,
+        total: Math.round((meta + google) * 100) / 100,
+        partial,
+    };
+}
+
+/** YYYY-MM-DD em BRT (UTC-3, sem DST desde 2019). Helper local. */
+function brtCalendarDay(utc: Date): string {
+    // BRT é UTC-3. Converte shifting -3h e lê em UTC.
+    const ms = utc.getTime() - 3 * 60 * 60 * 1000;
+    const d = new Date(ms);
+    const y = d.getUTCFullYear();
+    const m = String(d.getUTCMonth() + 1).padStart(2, "0");
+    const day = String(d.getUTCDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
+}
+
 export async function fetchAllAdsDailyData(
     year: number,
     month: number

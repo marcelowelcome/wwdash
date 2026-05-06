@@ -1,5 +1,10 @@
-import { type Deal } from "./schemas";
+import { type Deal, type WonDeal, type MonthlyTarget } from "./schemas";
 import { parseDate, inRange, daysAgo } from "./utils";
+import {
+    isElopement,
+    isInWwPipeline,
+    isInWwMqlPipeline,
+} from "./funnel-utils";
 
 const DOW_LABELS = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"] as const;
 
@@ -118,9 +123,99 @@ export interface SDRMetrics {
         delta: number;      // pct - histPct (in pp)
         deals: { id: string; title: string | null; cdate: string }[];
     }[];
+
+    // ─── REDESIGN v2 (mode coorte/evento + targets + spend) ──────────────────
+    // Os campos abaixo alimentam o redesign de aba SDR (kpi-weddings v2.8.0).
+    // Os campos acima são preservados para back-compat com testes legados;
+    // o componente SDRTab v2 não os consume.
+
+    /** Modo de cálculo do funil principal: 'evento' (default) ou 'coorte'. */
+    mode: SDRMode;
+
+    /** Funil rico (6 etapas) com current/previous/target e lista de deals por etapa. */
+    funnelDetailed: SDRFunnelDetailed;
+
+    /** Bloco de investimento (Meta + Google) ou null se spend não disponível. */
+    spend: SDRSpendBlock | null;
+
+    /** Custo por MQL ou null se spend ou mql ausentes. */
+    cpl: SDRCplBlock | null;
+
+    /** Sinais de dados ausentes — alimenta o banner do redesign. */
+    missingData: SDRMissingData;
 }
 
 export type PeriodFilter = "week" | "4weeks" | "3months" | "full";
+
+// ─── REDESIGN v2 — Types ─────────────────────────────────────────────────────
+
+export type SDRMode = "coorte" | "evento";
+
+export interface FunnelStage {
+    /** Contagem no período atual (semântica varia por mode). */
+    current: number;
+    /** Mesma medição no período imediatamente anterior. */
+    previous: number;
+    /** Meta prorrateada para o range (`monthly_target × daysBack / daysInTargetMonth`). */
+    target: number | null;
+    /** Lista de deals contados em `current` — alimenta o DealsModal. */
+    deals: WonDeal[];
+}
+
+export interface SDRFunnelDetailed {
+    lead: FunnelStage;
+    mql: FunnelStage;
+    agendamento: FunnelStage;
+    realizada: FunnelStage;
+    qualificacao: FunnelStage;
+    agCloser: FunnelStage;
+}
+
+export interface SDRSpendBlock {
+    meta: number;
+    google: number;
+    total: number;
+    /** Mesma soma no período imediatamente anterior; null se sem dado. */
+    previousTotal: number | null;
+}
+
+export interface SDRCplBlock {
+    /** Custo por MQL no período = total spend / mql.current. null se mql=0. */
+    current: number | null;
+    /** CPL no período anterior. */
+    previous: number | null;
+    /** Meta CPL (de `monthly_targets.cpl`). NÃO prorrateia (é taxa). */
+    target: number | null;
+}
+
+export interface SDRMissingData {
+    /** Lista de campos do funil sem meta no `monthly_targets` (ex: ['mql','agendamento']). */
+    targetsMissing: string[];
+    /** True quando o caller não conseguiu fornecer spend (ads_daily_cache vazio/parcial). */
+    spendUnavailable: boolean;
+    /** True se o caller marcou que a sync com AC está atrasada (>6h). */
+    staleSync: boolean;
+}
+
+export interface SDROptions {
+    /** 'evento' (default) ou 'coorte'. Ver lib/metrics-sdr.ts header. */
+    mode?: SDRMode;
+    /** Linha de `monthly_targets` para o mês de `end`. null = sem meta. */
+    targets?: MonthlyTarget | null;
+    /** Spend agregado do período (Meta + Google). null = sem dado. */
+    spend?: { meta: number; google: number } | null;
+    /** Spend agregado do período imediatamente anterior. */
+    previousSpend?: { meta: number; google: number } | null;
+    /**
+     * Dias no mês do `end` (ex: 30 ou 31) — usado para prorratear target.
+     * Caller calcula com `new Date(year, month, 0).getDate()`. Default 30.
+     */
+    daysInTargetMonth?: number;
+    /** Sinaliza ao motor que a sync AC está atrasada (>6h). */
+    staleSync?: boolean;
+    /** Sinaliza ao motor que o spend retornado é parcial (gaps no daily cache). */
+    spendPartial?: boolean;
+}
 
 /**
  * Aceita o preset legacy (string) ou um range concreto `{start, end}`.
@@ -191,9 +286,11 @@ function emptyDayBucket(): DayBucket {
 export function computeSDRMetrics(
     deals: Deal[],
     fieldMap: Record<string, string>,
-    period: SDRPeriodInput
+    period: SDRPeriodInput,
+    options: SDROptions = {},
 ): SDRMetrics {
     const now = new Date();
+    const mode: SDRMode = options.mode ?? "evento";
 
     // Internal IDs from supabase-api.ts
     const F_SQL_ID = fieldMap["SQL"];
@@ -685,6 +782,24 @@ export function computeSDRMetrics(
         })
         .sort((a, b) => b.count - a.count);
 
+    // ─── REDESIGN v2 — Funil rico com mode/coorte/evento, target prorrateado, ──
+    //     spend, CPL e missingData. Os helpers acima usam Deal[] (legacy);
+    //     aqui re-cast para WonDeal[] (test fixtures vão passar; produção
+    //     sempre passa WonDeal já que sdrDeals do Dashboard é WonDeal[]).
+    const wonDeals = deals as unknown as WonDeal[];
+    const funnelDetailed = computeFunnelDetailedV2(
+        wonDeals,
+        periodRange,
+        prevPeriodStart,
+        prevPeriodEnd,
+        F_SQL_ID,
+        mode,
+        options,
+    );
+    const spendBlock = buildSpendBlock(options);
+    const cplBlock = buildCplBlock(spendBlock, funnelDetailed.mql, options);
+    const missingData = buildMissingData(options, funnelDetailed);
+
     return {
         mqlThisWeek: mql,
         mm4s: mm4sValue,
@@ -704,5 +819,220 @@ export function computeSDRMetrics(
         dowPattern,
         deltaVsPrev: { dMql, dAgend },
         motivosCards,
+
+        // v2 redesign fields
+        mode,
+        funnelDetailed,
+        spend: spendBlock,
+        cpl: cplBlock,
+        missingData,
+    };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// REDESIGN v2 — Helpers do funil rico (modos coorte/evento + target/spend/cpl)
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Filtros de escopo WW para o funil v2.
+ * Lead = todo deal criado em pipeline WW (5 pipelines), excluindo elopement
+ * e títulos `EW%`. MQL = Lead + pipeline IN ['SDR Weddings','Closer Weddings',
+ * 'Planejamento Weddings'] (i.e., sem 'WW - Internacional' nem 'Outros
+ * Desqualificados | Wedding'). Decisão registrada no plano de redesign.
+ */
+function isInLeadScope(d: WonDeal): boolean {
+    if (isElopement(d)) return false;
+    if (d.title && /^EW/i.test(d.title)) return false;
+    return isInWwPipeline(d);
+}
+
+function isInMqlScope(d: WonDeal): boolean {
+    return isInLeadScope(d) && isInWwMqlPipeline(d);
+}
+
+/** True se a coluna de data está dentro de [start, end] (ambos inclusivos). */
+function dateInRange(value: string | null | undefined, start: Date, end: Date): boolean {
+    if (!value) return false;
+    const t = parseDate(value)?.getTime();
+    if (t == null || Number.isNaN(t)) return false;
+    return t >= start.getTime() && t <= end.getTime();
+}
+
+/** "Reunião realizada": como_foi_feita preenchido E ≠ '' E ≠ 'Não teve reunião'. */
+function isReuniaoRealizadaV2(d: WonDeal): boolean {
+    const v = (d.como_foi_feita_a_1a_reuniao || "").trim().toLowerCase();
+    return v !== "" && v !== "não teve reunião" && v !== "não";
+}
+
+/** "Qualificado SDR": SQL='Sim' OU data_qualificado preenchida (paridade com Jornada). */
+function isQualificadoV2(d: WonDeal, fSqlId: string): boolean {
+    const sqlVal = fSqlId ? d._cf?.[fSqlId] : undefined;
+    if (sqlVal === "Sim") return true;
+    return !!(d.data_qualificado && d.data_qualificado !== "");
+}
+
+/** "Agendamento Closer": data_horario_agendamento_closer preenchido. */
+function hasCloserAgendado(d: WonDeal): boolean {
+    return !!(d.data_horario_agendamento_closer && d.data_horario_agendamento_closer !== "");
+}
+
+interface CountedStage {
+    count: number;
+    deals: WonDeal[];
+}
+
+/**
+ * Aplica os critérios de cada etapa no modo Evento ou Coorte e devolve
+ * tanto o count quanto a lista de deals (para alimentar o DealsModal no UI).
+ */
+function computeStageCounts(
+    deals: WonDeal[],
+    range: { start: Date; end: Date },
+    fSqlId: string,
+    mode: SDRMode,
+): {
+    lead: CountedStage;
+    mql: CountedStage;
+    agendamento: CountedStage;
+    realizada: CountedStage;
+    qualificacao: CountedStage;
+    agCloser: CountedStage;
+} {
+    const accLead: WonDeal[] = [];
+    const accMql: WonDeal[] = [];
+    const accAg: WonDeal[] = [];
+    const accReal: WonDeal[] = [];
+    const accQual: WonDeal[] = [];
+    const accCloser: WonDeal[] = [];
+
+    for (const d of deals) {
+        if (!isInLeadScope(d)) continue;
+        const inLeadByCreated = dateInRange(d.created_at, range.start, range.end);
+
+        // Lead — sempre por created_at no período (Lead/MQL não diferem entre modos).
+        if (inLeadByCreated) {
+            accLead.push(d);
+            if (isInWwMqlPipeline(d)) accMql.push(d);
+        }
+
+        // Etapas de evento (agendamento, realizada, qualif, agCloser).
+        if (!isInMqlScope(d)) continue;
+
+        if (mode === "evento") {
+            // Conta o evento dentro do período.
+            if (dateInRange(d.data_reuniao_1, range.start, range.end)) {
+                accAg.push(d);
+                if (isReuniaoRealizadaV2(d)) accReal.push(d);
+            }
+            if (dateInRange(d.data_qualificado, range.start, range.end)) {
+                accQual.push(d);
+            }
+            if (dateInRange(d.data_horario_agendamento_closer, range.start, range.end)) {
+                accCloser.push(d);
+            }
+        } else {
+            // Coorte: lead nasceu no período; etapa conta se já alcançou.
+            if (!inLeadByCreated) continue;
+            if (d.data_reuniao_1) {
+                accAg.push(d);
+                if (isReuniaoRealizadaV2(d)) accReal.push(d);
+            }
+            if (isQualificadoV2(d, fSqlId)) accQual.push(d);
+            if (hasCloserAgendado(d)) accCloser.push(d);
+        }
+    }
+
+    return {
+        lead: { count: accLead.length, deals: accLead },
+        mql: { count: accMql.length, deals: accMql },
+        agendamento: { count: accAg.length, deals: accAg },
+        realizada: { count: accReal.length, deals: accReal },
+        qualificacao: { count: accQual.length, deals: accQual },
+        agCloser: { count: accCloser.length, deals: accCloser },
+    };
+}
+
+function computeFunnelDetailedV2(
+    deals: WonDeal[],
+    period: { start: Date; end: Date },
+    prevStart: Date,
+    prevEnd: Date,
+    fSqlId: string,
+    mode: SDRMode,
+    options: SDROptions,
+): SDRFunnelDetailed {
+    const cur = computeStageCounts(deals, period, fSqlId, mode);
+    const prev = computeStageCounts(deals, { start: prevStart, end: prevEnd }, fSqlId, mode);
+
+    // Prorrateio de target.
+    const daysInMonth = options.daysInTargetMonth ?? 30;
+    const periodMs = period.end.getTime() - period.start.getTime();
+    const periodDays = Math.max(1, Math.round(periodMs / (24 * 60 * 60 * 1000) + 0.5));
+    const proratedTarget = (monthly: number | null | undefined): number | null => {
+        if (monthly == null || monthly < 0) return null;
+        return Math.round((monthly * periodDays) / daysInMonth);
+    };
+
+    const t = options.targets ?? null;
+    const targets = {
+        leads: proratedTarget(t?.leads),
+        mql: proratedTarget(t?.mql),
+        agendamento: proratedTarget(t?.agendamento),
+        reunioes: proratedTarget(t?.reunioes),
+        qualificado: proratedTarget(t?.qualificado),
+        closer_agendada: proratedTarget(t?.closer_agendada),
+    };
+
+    return {
+        lead: { current: cur.lead.count, previous: prev.lead.count, target: targets.leads, deals: cur.lead.deals },
+        mql: { current: cur.mql.count, previous: prev.mql.count, target: targets.mql, deals: cur.mql.deals },
+        agendamento: { current: cur.agendamento.count, previous: prev.agendamento.count, target: targets.agendamento, deals: cur.agendamento.deals },
+        realizada: { current: cur.realizada.count, previous: prev.realizada.count, target: targets.reunioes, deals: cur.realizada.deals },
+        qualificacao: { current: cur.qualificacao.count, previous: prev.qualificacao.count, target: targets.qualificado, deals: cur.qualificacao.deals },
+        agCloser: { current: cur.agCloser.count, previous: prev.agCloser.count, target: targets.closer_agendada, deals: cur.agCloser.deals },
+    };
+}
+
+function buildSpendBlock(options: SDROptions): SDRSpendBlock | null {
+    if (!options.spend) return null;
+    const total = (options.spend.meta || 0) + (options.spend.google || 0);
+    const previousTotal = options.previousSpend
+        ? (options.previousSpend.meta || 0) + (options.previousSpend.google || 0)
+        : null;
+    return {
+        meta: options.spend.meta || 0,
+        google: options.spend.google || 0,
+        total,
+        previousTotal,
+    };
+}
+
+function buildCplBlock(
+    spend: SDRSpendBlock | null,
+    mqlStage: FunnelStage,
+    options: SDROptions,
+): SDRCplBlock | null {
+    if (!spend) return null;
+    const current = mqlStage.current > 0 ? Math.round((spend.total / mqlStage.current) * 100) / 100 : null;
+    const previous =
+        spend.previousTotal != null && mqlStage.previous > 0
+            ? Math.round((spend.previousTotal / mqlStage.previous) * 100) / 100
+            : null;
+    const target = options.targets?.cpl != null ? options.targets.cpl : null;
+    return { current, previous, target };
+}
+
+function buildMissingData(options: SDROptions, funnel: SDRFunnelDetailed): SDRMissingData {
+    const targetsMissing: string[] = [];
+    if (funnel.lead.target == null) targetsMissing.push("leads");
+    if (funnel.mql.target == null) targetsMissing.push("mql");
+    if (funnel.agendamento.target == null) targetsMissing.push("agendamento");
+    if (funnel.realizada.target == null) targetsMissing.push("reunioes");
+    if (funnel.qualificacao.target == null) targetsMissing.push("qualificado");
+    if (funnel.agCloser.target == null) targetsMissing.push("closer_agendada");
+    return {
+        targetsMissing,
+        spendUnavailable: !options.spend || options.spendPartial === true,
+        staleSync: options.staleSync === true,
     };
 }

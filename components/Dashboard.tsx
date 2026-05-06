@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
-import { fetchAllDealsFromDb, fetchFieldMetaFromDb, fetchStagesFromDb, fetchWonDealsFromDb, CLOSER_GROUP_ID } from "@/lib/supabase-api";
+import { fetchAllDealsFromDb, fetchFieldMetaFromDb, fetchStagesFromDb, fetchWonDealsFromDb, fetchMonthlyTarget, fetchAdsSpendByRange, CLOSER_GROUP_ID } from "@/lib/supabase-api";
+import { type MonthlyTarget } from "@/lib/schemas";
 import {
     DEFAULT_SELECTION,
     loadPeriodFromStorage,
@@ -223,6 +224,10 @@ export default function Dashboard() {
     const [syncing, setSyncing] = useState(false);
     const [syncResult, setSyncResult] = useState<{ synced?: number; error?: string } | null>(null);
     const [lastSyncLog, setLastSyncLog] = useState<SyncLog | null>(null);
+    // Wedding monthly target + spend agregado para a janela atual (SDRTab v2)
+    const [sdrTarget, setSdrTarget] = useState<MonthlyTarget | null>(null);
+    const [sdrSpend, setSdrSpend] = useState<{ meta: number; google: number; partial: boolean } | null>(null);
+    const [sdrPrevSpend, setSdrPrevSpend] = useState<{ meta: number; google: number } | null>(null);
     const chat = useChat();
 
     // Global period filter (persisted in localStorage; migra do schema antigo)
@@ -343,6 +348,38 @@ export default function Dashboard() {
             setLoading(false);
         }
     }, [loadFromServer, loadFromSupabase]);
+
+    // ─── SDRTab v2 — fetch de target mensal + spend (Meta + Google) por range ───
+    // Roda em paralelo com `loadData`. Não bloqueia render do dashboard.
+    useEffect(() => {
+        const range = resolvePeriod(periodSelection);
+        const yearOfEnd = range.end.getUTCFullYear();
+        const monthOfEnd = range.end.getUTCMonth() + 1;
+        // Período anterior = mesma duração imediatamente antes.
+        const duration = range.end.getTime() - range.start.getTime();
+        const prevEnd = new Date(range.start.getTime() - 1);
+        const prevStart = new Date(prevEnd.getTime() - duration);
+
+        let cancelled = false;
+        Promise.allSettled([
+            fetchMonthlyTarget(yearOfEnd, monthOfEnd, "wedding"),
+            fetchAdsSpendByRange(range.start, range.end),
+            fetchAdsSpendByRange(prevStart, prevEnd),
+        ]).then(([targetRes, spendRes, prevSpendRes]) => {
+            if (cancelled) return;
+            setSdrTarget(targetRes.status === "fulfilled" ? targetRes.value : null);
+            setSdrSpend(spendRes.status === "fulfilled" ? spendRes.value : null);
+            setSdrPrevSpend(
+                prevSpendRes.status === "fulfilled"
+                    ? { meta: prevSpendRes.value.meta, google: prevSpendRes.value.google }
+                    : null,
+            );
+        });
+
+        return () => {
+            cancelled = true;
+        };
+    }, [periodSelection]);
 
     const handleSync = useCallback(async () => {
         setSyncing(true);
@@ -477,7 +514,16 @@ export default function Dashboard() {
             <div style={{ maxWidth: 1200, margin: "0 auto", padding: "24px 28px 48px" }}>
                 <TabErrorBoundary key={tab} tabLabel={TABS.find(t => t.id === tab)?.label}>
                 {tab === "overview" && <OverviewTab sdrDeals={sdrDeals} closerDeals={closerDeals} wonDeals={wonDeals} fieldMap={acFieldMap} stageMap={acStageMap} allDeals={allDeals} period={periodSelection} />}
-                {tab === "sdr" && <SDRTab deals={sdrDeals} fieldMap={acFieldMap} period={periodSelection} />}
+                {tab === "sdr" && (
+                    <SDRTab
+                        deals={sdrDeals}
+                        fieldMap={acFieldMap}
+                        period={periodSelection}
+                        targets={sdrTarget}
+                        spend={sdrSpend}
+                        previousSpend={sdrPrevSpend}
+                    />
+                )}
                 {tab === "funnel" && <FunnelTab m={metrics} />}
                 {tab === "closer" && <CloserTab m={metrics} />}
                 {tab === "pipeline" && <PipelineTab m={metrics} />}

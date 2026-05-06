@@ -1,22 +1,14 @@
 "use client";
 
-import { useState, useMemo } from "react";
-import {
-    ComposedChart, Bar, Line,
-    XAxis, YAxis, CartesianGrid, Tooltip,
-    ResponsiveContainer, ReferenceLine, Cell,
-} from "recharts";
-import { SectionTitle } from "./SectionTitle";
-import { CustomTooltip } from "./CustomTooltip";
+import { useMemo, useState } from "react";
 import { T } from "./theme";
-import { type SDRMetrics, computeSDRMetrics } from "@/lib/metrics-sdr";
+import { DealsModal } from "./DealsModal";
+import { type SDRMetrics, type FunnelStage, type SDRMode, computeSDRMetrics } from "@/lib/metrics-sdr";
 import { resolvePeriod, type PeriodSelection } from "@/lib/period-selection";
-import { type Deal } from "@/lib/schemas";
+import { type Deal, type WonDeal, type MonthlyTarget } from "@/lib/schemas";
 import { ownerName } from "@/lib/supabase-api";
 
-const AC_DEAL_URL = "https://welcometrips.activehosted.com/app/deals/";
-
-/* ─── Color mapping (prototype C → T) ────────────────────────────────────── */
+/* ─── Color references (reusam paleta T) ─────────────────────────────────── */
 const C = {
     blue: "#4D94FF",
     blueDim: "rgba(77,148,255,0.10)",
@@ -30,147 +22,632 @@ const C = {
     purple: T.rose,
 };
 
-/* ─── Shared styles ───────────────────────────────────────────────────────── */
+/* ─── Estilos compartilhados ─────────────────────────────────────────────── */
 const s = {
     card: { background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: "18px" } as const,
-    label: { fontSize: 10, color: T.muted, fontWeight: 500, letterSpacing: "0.7px", textTransform: "uppercase" as const },
+    label: {
+        fontSize: 10,
+        color: T.muted,
+        fontWeight: 500,
+        letterSpacing: "0.7px",
+        textTransform: "uppercase" as const,
+    },
     mono: { fontFamily: "monospace" },
     sep: { borderTop: `1px solid ${T.border}`, marginTop: 10, paddingTop: 10 },
 };
 
-/* ─── Helper: MiniBar ─────────────────────────────────────────────────────── */
-function MiniBar({ pct, color = C.blue }: { pct: number; color?: string }) {
+/* ─── Helpers de formatação ──────────────────────────────────────────────── */
+const fmtNumber = (n: number | null | undefined): string =>
+    n == null ? "—" : new Intl.NumberFormat("pt-BR").format(n);
+
+const fmtBrl = (n: number | null | undefined): string =>
+    n == null ? "—" : `R$ ${new Intl.NumberFormat("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n)}`;
+
+const fmtPctSigned = (n: number): string => `${n >= 0 ? "+" : ""}${n.toFixed(1)}%`;
+
+function deltaPercent(current: number, previous: number | null): number | null {
+    if (previous == null || previous === 0) return null;
+    return ((current - previous) / previous) * 100;
+}
+
+/* ─── MiniBar (preservado, usado no InvestigationPanel + ProgressBar) ───── */
+function MiniBar({ pct, color = C.blue, height = 5 }: { pct: number; color?: string; height?: number }) {
     return (
-        <div style={{ height: 5, background: "rgba(255,255,255,0.05)", borderRadius: 3, marginTop: 3 }}>
-            <div style={{ height: "100%", borderRadius: 3, width: `${Math.min(100, pct)}%`, background: color, transition: "width 0.4s ease" }} />
+        <div style={{ height, background: "rgba(255,255,255,0.05)", borderRadius: 3, marginTop: 3 }}>
+            <div
+                style={{
+                    height: "100%",
+                    borderRadius: 3,
+                    width: `${Math.min(100, Math.max(0, pct))}%`,
+                    background: color,
+                    transition: "width 0.4s ease",
+                }}
+            />
         </div>
     );
 }
 
-/* ─── Helper: Badge ───────────────────────────────────────────────────────── */
-function Badge({ v, suffix = "%" }: { v: number; suffix?: string }) {
-    const c = v < 15 ? C.red : v < 25 ? C.amber : C.green;
-    return <span style={{ color: c, fontFamily: "monospace", fontWeight: 700 }}>{v}{suffix}</span>;
+/* ─── Cor de status (atingimento de meta) ────────────────────────────────── */
+function targetStatusColor(pct: number | null): string {
+    if (pct == null) return T.muted;
+    if (pct >= 100) return C.green;
+    if (pct >= 85) return C.amber;
+    return C.red;
 }
 
-/* ─── Helper: Trend chart tooltip ─────────────────────────────────────────── */
-function TrendTooltip({ active, payload }: { active?: boolean; payload?: any[] }) {
-    if (!active || !payload?.length) return null;
-    const d = payload[0]?.payload;
-    if (!d) return null;
+/* ─── ModeToggle ─────────────────────────────────────────────────────────── */
+function ModeToggle({ mode, onChange }: { mode: SDRMode; onChange: (m: SDRMode) => void }) {
+    const opts: { id: SDRMode; label: string; help: string }[] = [
+        { id: "evento", label: "Evento", help: "Conta o que aconteceu no período (eventos pelas datas)." },
+        { id: "coorte", label: "Coorte", help: "Leads criados no período + onde estão hoje no funil." },
+    ];
+    const active = opts.find((o) => o.id === mode);
     return (
-        <div style={{ background: "#231740", border: `1px solid ${T.border}`, borderRadius: 8, padding: "10px 14px", fontSize: 11 }}>
-            <div style={{ color: T.white, fontWeight: 700, marginBottom: 5 }}>
-                {d.label} {d.diaSemana ? `· ${d.diaSemana}` : ""}
-                {d.isWeekend && <span style={{ marginLeft: 6, background: C.blueDim, color: C.blue, padding: "1px 6px", borderRadius: 3 }}>FDS</span>}
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <div
+                style={{
+                    display: "flex",
+                    background: T.surface,
+                    border: `1px solid ${T.border}`,
+                    borderRadius: 999,
+                    padding: 3,
+                    gap: 2,
+                }}
+            >
+                {opts.map((o) => {
+                    const isActive = mode === o.id;
+                    return (
+                        <button
+                            key={o.id}
+                            type="button"
+                            onClick={() => onChange(o.id)}
+                            aria-pressed={isActive}
+                            style={{
+                                background: isActive ? T.gold : "transparent",
+                                color: isActive ? T.bg : T.muted,
+                                border: "none",
+                                borderRadius: 999,
+                                padding: "5px 14px",
+                                fontSize: 11,
+                                fontWeight: 600,
+                                cursor: "pointer",
+                                fontFamily: "inherit",
+                                transition: "all 200ms ease",
+                            }}
+                        >
+                            {o.label}
+                        </button>
+                    );
+                })}
             </div>
-            <div style={{ color: C.blue }}>MQL: <strong>{d.mql}</strong></div>
-            <div style={{ color: C.amber }}>Agendamentos: <strong>{d.agendamentos}</strong></div>
-            <div style={{ color: T.muted }}>
-                Taxa: <strong style={{ color: d.taxaAgend < 15 ? C.red : d.taxaAgend < 25 ? C.amber : C.green }}>{d.taxaAgend.toFixed(1)}%</strong>
-                {" "}(meta: 45%)
+            <div
+                title={active?.help}
+                style={{ fontSize: 10, color: T.muted, maxWidth: 280, lineHeight: 1.4 }}
+            >
+                {active?.help}
             </div>
-            {d.reunioes > 0 && <div style={{ color: C.purple }}>Reunioes: <strong>{d.reunioes}</strong></div>}
         </div>
     );
 }
 
-/* ─── Helper: Delta chip ──────────────────────────────────────────────────── */
-function DeltaChip({ delta }: { delta: number | null }) {
-    if (delta == null) return null;
-    return (
-        <div style={{ fontSize: 10, marginTop: 4, color: delta >= 0 ? C.green : C.red }}>
-            {delta >= 0 ? "+" : ""}{delta.toFixed(1)}% vs ant.
-        </div>
-    );
-}
+/* ─── MissingDataBanner ──────────────────────────────────────────────────── */
+const STAGE_LABEL_BR: Record<string, string> = {
+    leads: "Leads",
+    mql: "MQL",
+    agendamento: "Agendamentos",
+    reunioes: "Reuniões",
+    qualificado: "Qualificações",
+    closer_agendada: "Closer agendada",
+};
 
-/* ─── Helper: KPI Card ────────────────────────────────────────────────────── */
-function KpiCard({ label, value, delta, color, alert }: {
-    label: string; value: string | number; delta?: number | null; color: string; alert?: boolean;
+function MissingDataBanner({
+    targetsMissing,
+    spendUnavailable,
+    staleSync,
+    onDismiss,
+}: {
+    targetsMissing: string[];
+    spendUnavailable: boolean;
+    staleSync: boolean;
+    onDismiss: () => void;
 }) {
+    const items: string[] = [];
+    if (targetsMissing.length > 0) {
+        const labels = targetsMissing.map((k) => STAGE_LABEL_BR[k] ?? k).join(", ");
+        items.push(`Meta não definida para: ${labels}.`);
+    }
+    if (spendUnavailable) items.push("Investimento de mídia parcial (faltam dias no cache).");
+    if (staleSync) items.push("Sync com ActiveCampaign atrasada (>6h).");
+    if (items.length === 0) return null;
+
     return (
-        <div style={{
-            background: alert ? C.redDim : T.card,
-            border: `1px solid ${alert ? C.redBright : T.border}`,
-            borderRadius: 10, padding: "12px 12px 10px", cursor: "default",
-            transition: "border-color 0.2s",
-        }}>
-            <div style={s.label}>{label}</div>
-            <div style={{ fontSize: 22, fontWeight: 700, color, ...s.mono, lineHeight: 1.2, marginTop: 5 }}>{value}</div>
-            <DeltaChip delta={delta ?? null} />
+        <div
+            role="status"
+            style={{
+                background: T.surface,
+                borderLeft: `3px solid ${C.amber}`,
+                borderRadius: 8,
+                padding: "12px 16px",
+                display: "flex",
+                alignItems: "flex-start",
+                gap: 12,
+                marginBottom: 18,
+                fontSize: 12,
+                color: T.cream,
+                lineHeight: 1.55,
+            }}
+        >
+            <span style={{ color: C.amber, fontSize: 14, lineHeight: 1 }}>⚠</span>
+            <div style={{ flex: 1 }}>
+                {items.map((it, i) => (
+                    <div key={i}>{it}</div>
+                ))}
+            </div>
+            <button
+                type="button"
+                onClick={onDismiss}
+                aria-label="Dispensar avisos"
+                style={{
+                    background: "transparent",
+                    border: "none",
+                    color: T.muted,
+                    cursor: "pointer",
+                    fontSize: 14,
+                    padding: 0,
+                    lineHeight: 1,
+                }}
+            >
+                ✕
+            </button>
         </div>
     );
 }
 
-/* ─── Helper: Investigation Panel ─────────────────────────────────────────── */
+/* ─── FunnelKpiCard ──────────────────────────────────────────────────────── */
+function FunnelKpiCard({
+    label,
+    stage,
+    onOpenDeals,
+}: {
+    label: string;
+    stage: FunnelStage;
+    onOpenDeals: () => void;
+}) {
+    const { current, previous, target } = stage;
+    const delta = deltaPercent(current, previous);
+    const targetPct = target != null && target > 0 ? (current / target) * 100 : null;
+    const statusColor = targetStatusColor(targetPct);
+    const [hover, setHover] = useState(false);
+
+    return (
+        <button
+            type="button"
+            onClick={onOpenDeals}
+            onMouseEnter={() => setHover(true)}
+            onMouseLeave={() => setHover(false)}
+            aria-label={`${label}: ${current}. Abrir lista de deals.`}
+            style={{
+                width: "100%",
+                textAlign: "left",
+                background: hover
+                    ? `linear-gradient(135deg, ${T.surface} 0%, ${T.card} 100%)`
+                    : T.surface,
+                border: `1px solid ${T.border}`,
+                borderRadius: 10,
+                padding: "20px 18px 18px",
+                cursor: "pointer",
+                transform: hover ? "translateY(-2px)" : "translateY(0)",
+                boxShadow: hover ? "0 8px 24px rgba(0,0,0,0.4)" : "none",
+                transition: "all 200ms ease-out",
+                fontFamily: "inherit",
+                color: T.cream,
+            }}
+        >
+            <div style={s.label}>{label}</div>
+            <div
+                style={{
+                    fontSize: 32,
+                    fontWeight: 200,
+                    color: T.white,
+                    marginTop: 8,
+                    lineHeight: 1.1,
+                    ...s.mono,
+                }}
+            >
+                {fmtNumber(current)}
+            </div>
+            {delta != null ? (
+                <div style={{ fontSize: 11, marginTop: 6, color: delta >= 0 ? C.green : C.red, fontWeight: 500 }}>
+                    {delta >= 0 ? "↑" : "↓"} {fmtPctSigned(delta)} vs ant.
+                </div>
+            ) : (
+                <div style={{ fontSize: 11, marginTop: 6, color: T.muted }}>— vs ant.</div>
+            )}
+            {targetPct != null ? (
+                <div style={{ marginTop: 12 }}>
+                    <MiniBar pct={targetPct} color={statusColor} height={4} />
+                    <div
+                        style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            marginTop: 5,
+                            fontSize: 10,
+                            color: T.muted,
+                        }}
+                    >
+                        <span>{targetPct.toFixed(0)}% da meta</span>
+                        <span style={{ color: statusColor, fontWeight: 600 }}>meta {fmtNumber(target)}</span>
+                    </div>
+                </div>
+            ) : (
+                <div style={{ marginTop: 12, fontSize: 10, color: T.muted, fontStyle: "italic" }}>
+                    sem meta definida
+                </div>
+            )}
+        </button>
+    );
+}
+
+/* ─── FunnelChevron (taxa entre etapas) ──────────────────────────────────── */
+function FunnelChevron({
+    numerator,
+    denominator,
+    numeratorLabel,
+    denominatorLabel,
+}: {
+    numerator: number;
+    denominator: number;
+    numeratorLabel: string;
+    denominatorLabel: string;
+}) {
+    const rate = denominator > 0 ? (numerator / denominator) * 100 : null;
+    return (
+        <div
+            title={
+                rate != null
+                    ? `${numerator} ${numeratorLabel} ÷ ${denominator} ${denominatorLabel} = ${rate.toFixed(1)}%`
+                    : `${denominator} ${denominatorLabel} (sem dados)`
+            }
+            style={{
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "center",
+                color: T.muted,
+                fontSize: 10,
+                fontFamily: "monospace",
+                fontWeight: 500,
+                padding: "0 4px",
+                userSelect: "none",
+                cursor: "help",
+            }}
+        >
+            <span style={{ fontSize: 18, lineHeight: 1, marginBottom: 2 }}>›</span>
+            <span style={{ color: rate != null ? T.cream : T.muted }}>
+                {rate != null ? `${rate.toFixed(0)}%` : "—"}
+            </span>
+        </div>
+    );
+}
+
+/* ─── InvestmentCard ────────────────────────────────────────────────────── */
+function InvestmentCard({
+    spend,
+    target,
+    daysInTargetMonth,
+    daysInPeriod,
+}: {
+    spend: { meta: number; google: number; total: number; previousTotal: number | null } | null;
+    target: { totalProrated: number | null } | null;
+    daysInTargetMonth: number;
+    daysInPeriod: number;
+}) {
+    if (!spend) {
+        return (
+            <div style={s.card}>
+                <div style={s.label}>Investimento mídia</div>
+                <div style={{ fontSize: 22, fontWeight: 200, color: T.muted, marginTop: 8, ...s.mono }}>—</div>
+                <div style={{ fontSize: 11, color: T.muted, marginTop: 6 }}>Spend não disponível no período.</div>
+            </div>
+        );
+    }
+
+    const delta = deltaPercent(spend.total, spend.previousTotal);
+    const targetPct =
+        target?.totalProrated != null && target.totalProrated > 0
+            ? (spend.total / target.totalProrated) * 100
+            : null;
+    const statusColor = targetStatusColor(targetPct);
+    void daysInTargetMonth;
+    void daysInPeriod;
+
+    return (
+        <div style={s.card}>
+            <div style={s.label}>Investimento mídia</div>
+            <div
+                style={{
+                    fontSize: 30,
+                    fontWeight: 200,
+                    color: T.white,
+                    marginTop: 8,
+                    lineHeight: 1.1,
+                    ...s.mono,
+                }}
+            >
+                {fmtBrl(spend.total)}
+            </div>
+            <div style={{ fontSize: 11, color: T.muted, marginTop: 6, lineHeight: 1.6 }}>
+                Meta {fmtBrl(spend.meta)} · Google {fmtBrl(spend.google)}
+            </div>
+            {delta != null && (
+                <div
+                    style={{
+                        fontSize: 11,
+                        marginTop: 8,
+                        color: delta >= 0 ? C.green : C.red,
+                        fontWeight: 500,
+                    }}
+                >
+                    {delta >= 0 ? "↑" : "↓"} {fmtPctSigned(delta)} vs período anterior
+                </div>
+            )}
+            {targetPct != null && target?.totalProrated != null && (
+                <div style={{ marginTop: 14 }}>
+                    <MiniBar pct={targetPct} color={statusColor} height={4} />
+                    <div
+                        style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            marginTop: 5,
+                            fontSize: 10,
+                            color: T.muted,
+                        }}
+                    >
+                        <span>{targetPct.toFixed(0)}% da meta prorrateada</span>
+                        <span style={{ color: statusColor, fontWeight: 600 }}>{fmtBrl(target.totalProrated)}</span>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+}
+
+/* ─── CplCard ────────────────────────────────────────────────────────────── */
+function CplCard({
+    cpl,
+}: {
+    cpl: { current: number | null; previous: number | null; target: number | null } | null;
+}) {
+    if (!cpl) {
+        return (
+            <div style={s.card}>
+                <div style={s.label}>Custo por MQL</div>
+                <div style={{ fontSize: 22, fontWeight: 200, color: T.muted, marginTop: 8, ...s.mono }}>—</div>
+                <div style={{ fontSize: 11, color: T.muted, marginTop: 6 }}>Spend e/ou MQL não disponíveis.</div>
+            </div>
+        );
+    }
+
+    const delta = deltaPercent(cpl.current ?? 0, cpl.previous);
+    // CPL: menor é melhor → "verde" quando atual <= meta.
+    const targetPct =
+        cpl.current != null && cpl.target != null && cpl.target > 0
+            ? (cpl.current / cpl.target) * 100
+            : null;
+    const statusColor =
+        targetPct == null ? T.muted : targetPct <= 100 ? C.green : targetPct <= 120 ? C.amber : C.red;
+
+    return (
+        <div style={s.card}>
+            <div style={s.label}>Custo por MQL</div>
+            <div
+                style={{
+                    fontSize: 30,
+                    fontWeight: 200,
+                    color: T.white,
+                    marginTop: 8,
+                    lineHeight: 1.1,
+                    ...s.mono,
+                }}
+            >
+                {fmtBrl(cpl.current)}
+            </div>
+            {delta != null && (
+                <div
+                    style={{
+                        fontSize: 11,
+                        marginTop: 8,
+                        // Para CPL, queda é boa → invertido
+                        color: delta < 0 ? C.green : delta > 0 ? C.red : T.muted,
+                        fontWeight: 500,
+                    }}
+                >
+                    {delta < 0 ? "↓" : "↑"} {fmtPctSigned(delta)} vs período anterior
+                </div>
+            )}
+            {targetPct != null && cpl.target != null && (
+                <div style={{ marginTop: 14 }}>
+                    <MiniBar pct={Math.min(targetPct, 200)} color={statusColor} height={4} />
+                    <div
+                        style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            marginTop: 5,
+                            fontSize: 10,
+                            color: T.muted,
+                        }}
+                    >
+                        <span>{targetPct.toFixed(0)}% da meta</span>
+                        <span style={{ color: statusColor, fontWeight: 600 }}>meta {fmtBrl(cpl.target)}</span>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+}
+
+/* ─── InvestigationPanel (PRESERVADO do design anterior) ─────────────────── */
 function InvestigationPanel({ m }: { m: SDRMetrics }) {
     const inv = m.investigation;
     if (!inv) return null;
 
     return (
-        <div style={{ padding: "18px", background: T.surface, border: `1px solid ${C.redBright}`, borderRadius: 12 }}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: "#fca5a5", marginBottom: 14, display: "flex", alignItems: "center", gap: 8 }}>
-                Investigacao · Ultimos 7 dias vs 7 dias anteriores
+        <div
+            style={{
+                padding: "18px",
+                background: T.surface,
+                border: `1px solid ${C.redBright}`,
+                borderRadius: 12,
+            }}
+        >
+            <div
+                style={{
+                    fontSize: 12,
+                    fontWeight: 700,
+                    color: "#fca5a5",
+                    marginBottom: 14,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                }}
+            >
+                Investigação · Últimos 7 dias vs 7 dias anteriores
                 <span style={{ fontWeight: 400, color: T.muted, fontSize: 11 }}>
                     · {inv.last.agend} agend vs {inv.prev.agend} agend
                 </span>
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
-
-                {/* Diagnostico volume vs taxa */}
+                {/* Diagnóstico volume vs taxa */}
                 <div style={{ ...s.card, padding: 16 }}>
-                    <div style={{ ...s.label, marginBottom: 12 }}>Diagnostico da queda</div>
+                    <div style={{ ...s.label, marginBottom: 12 }}>Diagnóstico</div>
                     <div style={{ marginBottom: 10 }}>
                         <div style={{ fontSize: 12, color: T.muted, marginBottom: 3 }}>Agendamentos</div>
                         <div style={{ fontSize: 20, fontWeight: 700, ...s.mono, color: C.red }}>
-                            {inv.last.agend} <span style={{ fontSize: 13, color: T.muted }}>vs {inv.prev.agend}</span>
+                            {inv.last.agend}{" "}
+                            <span style={{ fontSize: 13, color: T.muted }}>vs {inv.prev.agend}</span>
                         </div>
                     </div>
                     <div style={s.sep}>
-                        <div style={{ ...s.label, marginBottom: 8 }}>Decomposicao da queda</div>
+                        <div style={{ ...s.label, marginBottom: 8 }}>Decomposição</div>
                         <div style={{ fontSize: 11, color: T.muted, marginBottom: 5 }}>
-                            <span style={{ width: 8, height: 8, background: C.blue, borderRadius: "50%", display: "inline-block", marginRight: 6 }} />
-                            Efeito volume (MQL):
-                            <strong style={{ color: inv.volEffect < 0 ? C.red : C.green, marginLeft: 6, ...s.mono }}>
-                                {inv.volEffect > 0 ? "+" : ""}{inv.volEffect.toFixed(1)} agend
+                            <span
+                                style={{
+                                    width: 8,
+                                    height: 8,
+                                    background: C.blue,
+                                    borderRadius: "50%",
+                                    display: "inline-block",
+                                    marginRight: 6,
+                                }}
+                            />
+                            Efeito volume:
+                            <strong
+                                style={{
+                                    color: inv.volEffect < 0 ? C.red : C.green,
+                                    marginLeft: 6,
+                                    ...s.mono,
+                                }}
+                            >
+                                {inv.volEffect > 0 ? "+" : ""}
+                                {inv.volEffect.toFixed(1)} agend
                             </strong>
                         </div>
                         <div style={{ fontSize: 11, color: T.muted, marginBottom: 10 }}>
-                            <span style={{ width: 8, height: 8, background: C.amber, borderRadius: "50%", display: "inline-block", marginRight: 6 }} />
-                            Efeito taxa (conversao):
-                            <strong style={{ color: inv.rateEffect < 0 ? C.red : C.green, marginLeft: 6, ...s.mono }}>
-                                {inv.rateEffect > 0 ? "+" : ""}{inv.rateEffect.toFixed(1)} agend
+                            <span
+                                style={{
+                                    width: 8,
+                                    height: 8,
+                                    background: C.amber,
+                                    borderRadius: "50%",
+                                    display: "inline-block",
+                                    marginRight: 6,
+                                }}
+                            />
+                            Efeito taxa:
+                            <strong
+                                style={{
+                                    color: inv.rateEffect < 0 ? C.red : C.green,
+                                    marginLeft: 6,
+                                    ...s.mono,
+                                }}
+                            >
+                                {inv.rateEffect > 0 ? "+" : ""}
+                                {inv.rateEffect.toFixed(1)} agend
                             </strong>
                         </div>
-                        <div style={{
-                            padding: "8px 10px",
-                            background: Math.abs(inv.rateEffect) > Math.abs(inv.volEffect) ? C.redDim : C.blueDim,
-                            borderRadius: 7, fontSize: 11, fontWeight: 700, color: T.white,
-                        }}>
-                            Causa principal: {Math.abs(inv.rateEffect) > Math.abs(inv.volEffect) ? "CONVERSAO (taxa caiu)" : "VOLUME (menos MQLs)"}
+                        <div
+                            style={{
+                                padding: "8px 10px",
+                                background:
+                                    Math.abs(inv.rateEffect) > Math.abs(inv.volEffect) ? C.redDim : C.blueDim,
+                                borderRadius: 7,
+                                fontSize: 11,
+                                fontWeight: 700,
+                                color: T.white,
+                            }}
+                        >
+                            Causa principal:{" "}
+                            {Math.abs(inv.rateEffect) > Math.abs(inv.volEffect)
+                                ? "CONVERSÃO (taxa caiu)"
+                                : "VOLUME (menos MQLs)"}
                         </div>
                     </div>
                 </div>
 
-                {/* SDR breakdown */}
+                {/* Por SDR */}
                 <div style={{ ...s.card, padding: 16 }}>
-                    <div style={{ ...s.label, marginBottom: 12 }}>Performance por SDR</div>
-                    {inv.sdrComp.map(sdr => {
+                    <div style={{ ...s.label, marginBottom: 12 }}>Por SDR</div>
+                    {inv.sdrComp.map((sdr) => {
                         const statusDot = sdr.delta < -12 ? C.red : sdr.delta < -4 ? C.amber : C.green;
                         return (
                             <div key={ownerName(sdr.ownerId)} style={{ marginBottom: 12 }}>
-                                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4, alignItems: "center" }}>
-                                    <span style={{ fontSize: 12, color: T.white, display: "flex", alignItems: "center", gap: 5 }}>
-                                        <span style={{ width: 8, height: 8, borderRadius: "50%", background: statusDot, display: "inline-block", flexShrink: 0 }} />
+                                <div
+                                    style={{
+                                        display: "flex",
+                                        justifyContent: "space-between",
+                                        marginBottom: 4,
+                                        alignItems: "center",
+                                    }}
+                                >
+                                    <span
+                                        style={{
+                                            fontSize: 12,
+                                            color: T.white,
+                                            display: "flex",
+                                            alignItems: "center",
+                                            gap: 5,
+                                        }}
+                                    >
+                                        <span
+                                            style={{
+                                                width: 8,
+                                                height: 8,
+                                                borderRadius: "50%",
+                                                background: statusDot,
+                                                display: "inline-block",
+                                                flexShrink: 0,
+                                            }}
+                                        />
                                         {ownerName(sdr.ownerId)}
                                     </span>
-                                    <span style={{ fontSize: 11, ...s.mono, color: sdr.delta < 0 ? C.red : C.green }}>
+                                    <span
+                                        style={{
+                                            fontSize: 11,
+                                            ...s.mono,
+                                            color: sdr.delta < 0 ? C.red : C.green,
+                                        }}
+                                    >
                                         {sdr.taxaLast.toFixed(0)}%
-                                        <span style={{ fontSize: 10, marginLeft: 4 }}>({sdr.delta > 0 ? "+" : ""}{sdr.delta.toFixed(1)}pp)</span>
+                                        <span style={{ fontSize: 10, marginLeft: 4 }}>
+                                            ({sdr.delta > 0 ? "+" : ""}
+                                            {sdr.delta.toFixed(1)}pp)
+                                        </span>
                                     </span>
                                 </div>
-                                <MiniBar pct={sdr.taxaLast * 2.5} color={sdr.delta < -12 ? C.red : sdr.delta < 0 ? C.amber : C.green} />
+                                <MiniBar
+                                    pct={sdr.taxaLast * 2.5}
+                                    color={sdr.delta < -12 ? C.red : sdr.delta < 0 ? C.amber : C.green}
+                                />
                                 <div style={{ fontSize: 10, color: T.muted, marginTop: 3 }}>
                                     {sdr.mqlLast} MQL · {sdr.agendLast} agend · prev: {sdr.taxaPrev.toFixed(0)}%
                                 </div>
@@ -179,400 +656,270 @@ function InvestigationPanel({ m }: { m: SDRMetrics }) {
                     })}
                 </div>
 
-                {/* Motivos variacao */}
+                {/* Motivos de variação */}
                 <div style={{ ...s.card, padding: 16 }}>
-                    <div style={{ ...s.label, marginBottom: 12 }}>Motivos de Perda (variacao)</div>
-                    {inv.motivosComp.slice(0, 6).map(mo => (
-                        <div key={mo.motivo} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, padding: "4px 0", borderBottom: `1px solid ${T.border}` }}>
-                            <span style={{ fontSize: 11, color: T.muted, maxWidth: "60%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{mo.motivo}</span>
-                            <div style={{ textAlign: "right" }}>
-                                <div style={{ fontSize: 11, ...s.mono, color: T.white }}>{mo.pctLast.toFixed(1)}%</div>
-                                <div style={{ fontSize: 10, color: mo.delta > 5 ? C.red : mo.delta < -5 ? C.green : T.muted }}>
-                                    {mo.delta > 0 ? "+" : ""}{mo.delta.toFixed(1)}pp
-                                </div>
-                            </div>
-                        </div>
-                    ))}
-                    <div style={{ ...s.sep, fontSize: 11, color: T.muted }}>
-                        "Outros" em alta = motivo nao registrado. Revisar preenchimento no AC.
-                    </div>
-                </div>
-            </div>
-        </div>
-    );
-}
-
-/* ─── Helper: Day Detail Panel ────────────────────────────────────────────── */
-function DayDetail({ day, onClose }: {
-    day: SDRMetrics["dailyTrend"][number];
-    onClose: () => void;
-}) {
-    return (
-        <div style={s.card}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <span style={{ fontSize: 13, fontWeight: 700, color: T.white }}>{day.label} · {day.diaSemana}</span>
-                    {day.isWeekend && <span style={{ fontSize: 10, background: C.blueDim, color: C.blue, padding: "2px 8px", borderRadius: 4 }}>FDS</span>}
-                </div>
-                <button onClick={onClose} style={{ background: "none", border: `1px solid ${T.border}`, borderRadius: 5, color: T.muted, cursor: "pointer", fontSize: 11, padding: "3px 10px" }}>
-                    Voltar
-                </button>
-            </div>
-
-            {/* Day KPIs */}
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8, marginBottom: 14 }}>
-                {[
-                    { l: "MQL", v: day.mql, c: C.blue },
-                    { l: "Agendamentos", v: day.agendamentos, c: C.amber },
-                    { l: "Taxa Agend.", v: `${day.taxaAgend.toFixed(1)}%`, c: day.taxaAgend < 15 ? C.red : day.taxaAgend < 25 ? C.amber : C.green },
-                    { l: "Reunioes", v: day.reunioes, c: C.purple },
-                    { l: "Comparecimento", v: `${day.taxaComp.toFixed(1)}%`, c: C.green },
-                    { l: "Qualificados", v: day.qualificados, c: T.muted },
-                ].map(kpi => (
-                    <div key={kpi.l} style={{ background: "rgba(255,255,255,0.025)", borderRadius: 8, padding: "9px 11px" }}>
-                        <div style={{ ...s.label, marginBottom: 4 }}>{kpi.l}</div>
-                        <div style={{ fontSize: 20, fontWeight: 700, color: kpi.c, ...s.mono }}>{kpi.v}</div>
-                    </div>
-                ))}
-            </div>
-
-            {/* SDRs on this day */}
-            <div style={s.sep}>
-                <div style={{ ...s.label, marginBottom: 8 }}>SDRs neste dia</div>
-                {day.sdrData.map(sdr => {
-                    const dotColor = sdr.taxa < 5 ? C.red : sdr.taxa < 15 ? C.amber : C.green;
-                    return (
-                        <div key={ownerName(sdr.ownerId)} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "7px 8px", borderRadius: 6, marginBottom: 3 }}>
-                            <span style={{ fontSize: 12, color: T.white, display: "flex", alignItems: "center", gap: 5 }}>
-                                <span style={{ width: 8, height: 8, borderRadius: "50%", background: dotColor, display: "inline-block" }} />
-                                {ownerName(sdr.ownerId)}
-                            </span>
-                            <div style={{ display: "flex", gap: 12, fontSize: 11, ...s.mono }}>
-                                <span style={{ color: T.muted }}>{sdr.mql} MQL</span>
-                                <span style={{ color: C.amber }}>{sdr.agendamentos} agend</span>
-                                <span style={{ color: sdr.taxa < 15 ? C.red : C.green, fontWeight: 700 }}>{sdr.taxa.toFixed(0)}%</span>
-                            </div>
-                        </div>
-                    );
-                })}
-            </div>
-
-            {/* Motivos for this day */}
-            {day.motivoBreakdown.some(mb => mb.count > 0) && (
-                <div style={s.sep}>
-                    <div style={{ ...s.label, marginBottom: 8 }}>Motivos de Perda ({day.mql - day.agendamentos} leads)</div>
-                    {day.motivoBreakdown.filter(mb => mb.count > 0).map(mb => (
-                        <div key={mb.motivo} style={{ display: "flex", justifyContent: "space-between", fontSize: 11, padding: "4px 0", borderBottom: `1px solid ${T.border}` }}>
-                            <span style={{ color: T.muted }}>{mb.motivo}</span>
-                            <span style={{ color: T.white, ...s.mono }}>{mb.count}</span>
-                        </div>
-                    ))}
-                </div>
-            )}
-
-            {/* Deals list */}
-            <div style={s.sep}>
-                <div style={{ ...s.label, marginBottom: 8 }}>Leads do dia ({day.deals.length})</div>
-                <div style={{ maxHeight: 220, overflow: "auto" }}>
-                    {day.deals.map(deal => (
-                        <div key={deal.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "5px 0", borderBottom: `1px solid ${T.border}33` }}>
-                            <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11 }}>
-                                <span style={{ width: 6, height: 6, borderRadius: "50%", background: deal.agendou ? C.green : deal.status === "2" ? C.red : T.muted, display: "inline-block", flexShrink: 0 }} />
-                                <span style={{ color: T.white }}>{deal.title || `#${deal.id}`}</span>
-                                {deal.agendou && <span style={{ fontSize: 9, color: C.green, fontWeight: 700 }}>AGENDOU</span>}
-                                {deal.status === "2" && !deal.agendou && <span style={{ fontSize: 9, color: C.red, fontWeight: 700 }}>LOST</span>}
-                            </div>
-                            <a
-                                href={`${AC_DEAL_URL}${deal.id}`}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                style={{ fontSize: 10, color: T.gold, textDecoration: "none", fontWeight: 700, padding: "1px 5px", border: `1px solid ${T.gold}44`, borderRadius: 4, flexShrink: 0 }}
-                            >
-                                AC ↗
-                            </a>
-                        </div>
-                    ))}
-                </div>
-            </div>
-        </div>
-    );
-}
-
-/* ─── Helper: DOW Heatmap ─────────────────────────────────────────────────── */
-function DOWHeatmap({ dowPattern }: { dowPattern: SDRMetrics["dowPattern"] }) {
-    return (
-        <div style={s.card}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: T.white, marginBottom: 4 }}>Taxa Agendamento por Dia da Semana</div>
-            <div style={{ fontSize: 11, color: T.muted, marginBottom: 16 }}>Media do periodo — identifica padroes de cadencia</div>
-            {dowPattern.map(d => (
-                <div key={d.dow} style={{ marginBottom: 14 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5, alignItems: "center" }}>
-                        <span style={{ fontSize: 12, color: T.white, fontWeight: 500 }}>{d.dow}</span>
-                        <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-                            <span style={{ fontSize: 10, color: T.muted }}>~{d.avgMql.toFixed(1)} MQL/dia</span>
-                            <span style={{ fontSize: 13, fontWeight: 700, ...s.mono, color: d.avgTaxa < 15 ? C.red : d.avgTaxa < 25 ? C.amber : C.green }}>
-                                {Math.round(d.avgTaxa)}%
-                            </span>
-                        </div>
-                    </div>
-                    <div style={{ height: 8, background: "rgba(255,255,255,0.04)", borderRadius: 4 }}>
-                        <div style={{
-                            height: "100%", borderRadius: 4,
-                            width: `${(d.avgTaxa / 50) * 100}%`,
-                            background: d.avgTaxa < 15 ? C.red : d.avgTaxa < 25 ? C.amber : C.green,
-                            transition: "width 0.4s ease",
-                        }} />
-                    </div>
-                </div>
-            ))}
-            <div style={s.sep}>
-                <div style={{ ...s.label, marginBottom: 8 }}>Interpretacao</div>
-                <div style={{ fontSize: 11, color: T.muted, lineHeight: 1.6 }}>
-                    Dias com taxa abaixo de 20% requerem revisao da cadencia de resposta da SDR. Verifique tempo de primeiro contato e volume de tentativas.
-                </div>
-            </div>
-        </div>
-    );
-}
-
-/* ─── Helper: Motivos Cards Full-Width ────────────────────────────────────── */
-
-function MotivosSection({ motivosCards }: { motivosCards: SDRMetrics["motivosCards"] }) {
-    const [expanded, setExpanded] = useState<string | null>(null);
-    const totalCount = motivosCards.reduce((sum, m) => sum + m.count, 0);
-    return (
-        <div style={s.card}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-                <div>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: T.white }}>Motivos de Perda SDR</div>
-                    <div style={{ fontSize: 11, color: T.muted, marginTop: 2 }}>Periodo vs. benchmark historico · Clique para ver deals</div>
-                </div>
-                <div style={{ fontSize: 11, color: T.muted }}>
-                    {totalCount} leads perdidos no periodo
-                </div>
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10 }}>
-                {motivosCards.map(mo => (
-                    <div key={mo.motivo}>
+                    <div style={{ ...s.label, marginBottom: 12 }}>Motivos (variação)</div>
+                    {inv.motivosComp.slice(0, 6).map((mo) => (
                         <div
-                            onClick={() => setExpanded(expanded === mo.motivo ? null : mo.motivo)}
+                            key={mo.motivo}
                             style={{
-                                background: T.surface, borderRadius: 9, padding: "12px 14px", cursor: "pointer",
-                                border: `1px solid ${expanded === mo.motivo ? T.gold : Math.abs(mo.delta) > 10 ? (mo.delta > 0 ? C.redBright : `${C.green}4D`) : T.border}`,
-                                transition: "border-color 0.15s",
+                                display: "flex",
+                                justifyContent: "space-between",
+                                alignItems: "center",
+                                marginBottom: 8,
+                                padding: "4px 0",
+                                borderBottom: `1px solid ${T.border}`,
                             }}
                         >
-                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
-                                <span style={{ fontSize: 11, color: T.muted, maxWidth: "75%", lineHeight: 1.4 }}>{mo.motivo}</span>
-                                <span style={{ fontSize: 10, color: mo.delta > 5 ? C.red : mo.delta < -5 ? C.green : T.muted, fontWeight: 700 }}>
-                                    {mo.delta > 0 ? "+" : ""}{mo.delta.toFixed(1)}pp
-                                </span>
-                            </div>
-                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end" }}>
-                                <div>
-                                    <div style={{ fontSize: 20, fontWeight: 700, color: T.white, ...s.mono }}>{mo.pct.toFixed(1)}%</div>
-                                    <div style={{ fontSize: 10, color: T.muted }}>hist: {mo.histPct.toFixed(1)}%</div>
+                            <span
+                                style={{
+                                    fontSize: 11,
+                                    color: T.muted,
+                                    maxWidth: "60%",
+                                    overflow: "hidden",
+                                    textOverflow: "ellipsis",
+                                    whiteSpace: "nowrap",
+                                }}
+                            >
+                                {mo.motivo}
+                            </span>
+                            <div style={{ textAlign: "right" }}>
+                                <div style={{ fontSize: 11, ...s.mono, color: T.white }}>
+                                    {mo.pctLast.toFixed(1)}%
                                 </div>
-                                <div style={{ fontSize: 13, ...s.mono, color: T.muted }}>{mo.count}</div>
+                                <div
+                                    style={{
+                                        fontSize: 10,
+                                        color: mo.delta > 5 ? C.red : mo.delta < -5 ? C.green : T.muted,
+                                    }}
+                                >
+                                    {mo.delta > 0 ? "+" : ""}
+                                    {mo.delta.toFixed(1)}pp
+                                </div>
                             </div>
-                            <MiniBar pct={mo.pct * 1.2} color={mo.delta > 10 ? C.red : mo.delta > 3 ? C.amber : C.blue} />
                         </div>
-                        {expanded === mo.motivo && mo.deals.length > 0 && (
-                            <div style={{ background: T.bg, border: `1px solid ${T.border}`, borderTop: "none", borderRadius: "0 0 9px 9px", padding: "8px 10px", maxHeight: 200, overflow: "auto" }}>
-                                <div style={{ fontSize: 9, color: T.muted, textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 6 }}>
-                                    {mo.deals.length} deals · {mo.motivo}
-                                </div>
-                                {mo.deals.map(deal => (
-                                    <div key={deal.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "4px 0", borderBottom: `1px solid ${T.border}33` }}>
-                                        <div style={{ fontSize: 11, color: T.white }}>
-                                            {deal.title || `Deal #${deal.id}`}
-                                            <span style={{ fontSize: 9, color: T.muted, marginLeft: 6 }}>
-                                                {new Date(deal.cdate).toLocaleDateString("pt-BR")}
-                                            </span>
-                                        </div>
-                                        <a
-                                            href={`${AC_DEAL_URL}${deal.id}`}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            style={{ fontSize: 10, color: T.gold, textDecoration: "none", fontWeight: 700, padding: "2px 6px", border: `1px solid ${T.gold}44`, borderRadius: 4 }}
-                                        >
-                                            AC ↗
-                                        </a>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-                    </div>
-                ))}
-            </div>
-            {motivosCards.some(mo => mo.pct > 40) && (
-                <div style={{ marginTop: 14, padding: "10px 14px", background: C.redDim, borderRadius: 8, fontSize: 11, color: T.muted, border: `1px solid ${T.border}` }}>
-                    <strong style={{ color: "#fca5a5" }}>Atencao:</strong> Motivo com mais de 40% pode indicar subnotificacao — verificar preenchimento no ActiveCampaign.
+                    ))}
                 </div>
-            )}
+            </div>
         </div>
     );
 }
 
-
-/* ═════════════════════════════════════════════════════════════════════════════
-   MAIN COMPONENT
-   ═════════════════════════════════════════════════════════════════════════════ */
+/* ─── SDRTab principal ───────────────────────────────────────────────────── */
 
 interface SDRTabProps {
-    deals: Deal[];
+    deals: WonDeal[];
     fieldMap: Record<string, string>;
     period: PeriodSelection;
+    targets: MonthlyTarget | null;
+    spend: { meta: number; google: number; partial: boolean } | null;
+    previousSpend: { meta: number; google: number } | null;
 }
 
-export function SDRTab({ deals, fieldMap, period }: SDRTabProps) {
-    const [selectedDay, setSelectedDay] = useState<number | null>(null);
-    const [investigateOpen, setInvestigateOpen] = useState(false);
+const MODE_STORAGE_KEY = "ww-sdr-mode";
 
-    // Período vem do seletor global do header. Usado pelo motor para
-    // calcular KPIs agregados e o "período anterior" (mesma duração).
+function loadModeFromStorage(): SDRMode {
+    if (typeof window === "undefined") return "evento";
+    const stored = window.localStorage.getItem(MODE_STORAGE_KEY);
+    return stored === "coorte" ? "coorte" : "evento";
+}
+
+interface ModalState {
+    stageKey: keyof SDRMetrics["funnelDetailed"];
+    title: string;
+    deals: WonDeal[];
+}
+
+const STAGE_TITLE: Record<keyof SDRMetrics["funnelDetailed"], string> = {
+    lead: "Leads (entrada bruta)",
+    mql: "MQLs (entraram no SDR)",
+    agendamento: "Agendamentos (1ª reunião marcada)",
+    realizada: "Reuniões realizadas (1ª)",
+    qualificacao: "Qualificações SDR",
+    agCloser: "Agendamentos com Closer",
+};
+
+const STAGE_LABEL_SHORT: Record<keyof SDRMetrics["funnelDetailed"], string> = {
+    lead: "Leads",
+    mql: "MQL",
+    agendamento: "Agendamento",
+    realizada: "Reunião",
+    qualificacao: "Qualificação",
+    agCloser: "Ag. Closer",
+};
+
+export function SDRTab({ deals, fieldMap, period, targets, spend, previousSpend }: SDRTabProps) {
+    const [mode, setMode] = useState<SDRMode>(loadModeFromStorage);
+    const [bannerDismissed, setBannerDismissed] = useState(false);
+    const [modal, setModal] = useState<ModalState | null>(null);
+
+    // Range UTC + dias
     const range = useMemo(() => resolvePeriod(period), [period]);
+    const periodMs = range.end.getTime() - range.start.getTime();
+    const daysInPeriod = Math.max(1, Math.round(periodMs / (24 * 60 * 60 * 1000) + 0.5));
+    const daysInTargetMonth = useMemo(() => {
+        const y = range.end.getUTCFullYear();
+        const m = range.end.getUTCMonth(); // 0-indexed; +1 para o "0 day" trick
+        return new Date(y, m + 1, 0).getDate();
+    }, [range]);
+
+    // Persistência do mode
+    function handleModeChange(next: SDRMode) {
+        setMode(next);
+        if (typeof window !== "undefined") window.localStorage.setItem(MODE_STORAGE_KEY, next);
+    }
+
+    // Computa as métricas com mode + targets + spend.
     const m = useMemo(
-        () => computeSDRMetrics(deals, fieldMap, { start: range.start, end: range.end }),
-        [deals, fieldMap, range],
+        () =>
+            computeSDRMetrics(deals as unknown as Deal[], fieldMap, { start: range.start, end: range.end }, {
+                mode,
+                targets,
+                spend: spend ? { meta: spend.meta, google: spend.google } : null,
+                previousSpend: previousSpend ?? null,
+                daysInTargetMonth,
+                spendPartial: spend?.partial === true,
+            }),
+        [deals, fieldMap, range, mode, targets, spend, previousSpend, daysInTargetMonth],
     );
 
-    // Aggregated KPIs from dailyTrend
-    const kpis = useMemo(() => {
-        const dt = m.dailyTrend;
-        const mql = dt.reduce((sum, d) => sum + d.mql, 0);
-        const agend = dt.reduce((sum, d) => sum + d.agendamentos, 0);
-        const reun = dt.reduce((sum, d) => sum + d.reunioes, 0);
-        const qual = dt.reduce((sum, d) => sum + d.qualificados, 0);
-        const taxaAgend = mql > 0 ? (agend / mql) * 100 : 0;
-        const taxaComp = agend > 0 ? (reun / agend) * 100 : 0;
-        return { mql, agend, reun, qual, taxaAgend, taxaComp };
-    }, [m.dailyTrend]);
+    // Meta de spend prorrateada (apenas para apresentação no InvestmentCard).
+    // Heurística: target_total = (cpl × mql_target_mes), prorrateado.
+    const spendTargetTotal = useMemo(() => {
+        if (!targets || !targets.cpl || !targets.mql) return null;
+        const monthlyTotal = targets.cpl * targets.mql;
+        return Math.round((monthlyTotal * daysInPeriod) / daysInTargetMonth);
+    }, [targets, daysInPeriod, daysInTargetMonth]);
 
-    const dayData = selectedDay !== null ? m.dailyTrend[selectedDay] ?? null : null;
-
-    // Detect if any day in dailyTrend is in anomaly zone (low taxa)
-    // Used for bar coloring — days in last 10 with avg below threshold
-    const anomalyDaySet = useMemo(() => {
-        if (!m.anomaly?.alert) return new Set<number>();
-        // Mark last 10 workdays as anomaly zone
-        const workIndices: number[] = [];
-        m.dailyTrend.forEach((d, i) => { if (!d.isWeekend) workIndices.push(i); });
-        return new Set(workIndices.slice(-10));
-    }, [m.anomaly, m.dailyTrend]);
+    const f = m.funnelDetailed;
+    const stageOrder: (keyof SDRMetrics["funnelDetailed"])[] = [
+        "lead",
+        "mql",
+        "agendamento",
+        "realizada",
+        "qualificacao",
+        "agCloser",
+    ];
 
     return (
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-
-            {/* ── 2. ALERT BANNER ───────────────────────────────────────────── */}
-            {m.anomaly?.alert && (
-                <div style={{
-                    padding: "10px 16px", background: C.redDim,
-                    border: `1px solid ${C.redBright}`, borderRadius: 10,
-                    display: "flex", alignItems: "center", justifyContent: "space-between",
-                }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                        <span style={{ fontSize: 16, color: C.red, fontWeight: 700 }}>!</span>
-                        <div>
-                            <span style={{ fontSize: 12, color: "#fca5a5", fontWeight: 700 }}>Anomalia detectada · </span>
-                            <span style={{ fontSize: 12, color: T.muted }}>
-                                Taxa de agendamento: <strong style={{ color: T.white }}>{m.anomaly.prevAvg.toFixed(0)}%</strong>
-                                {" → "}<strong style={{ color: C.red }}>{m.anomaly.recentAvg.toFixed(0)}%</strong>
-                                {" "}({m.anomaly.delta > 0 ? "+" : ""}{m.anomaly.delta.toFixed(0)}pp nos ultimos 10 dias uteis)
-                            </span>
-                        </div>
-                    </div>
-                    <button
-                        onClick={() => setInvestigateOpen(!investigateOpen)}
+        <div style={{ display: "flex", flexDirection: "column", gap: 16, padding: "0 4px" }}>
+            {/* Topo: ModeToggle + (futuramente) ações */}
+            <div
+                style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    flexWrap: "wrap",
+                    gap: 12,
+                }}
+            >
+                <div>
+                    <h1
                         style={{
-                            padding: "6px 14px", borderRadius: 7, border: "none", cursor: "pointer",
-                            fontSize: 11, fontWeight: 700,
-                            background: investigateOpen ? C.red : `${C.red}59`,
-                            color: "#fff",
+                            fontSize: 22,
+                            color: T.white,
+                            fontWeight: 700,
+                            margin: 0,
+                            marginBottom: 4,
                         }}
                     >
-                        {investigateOpen ? "Fechar" : "Investigar queda"}
-                    </button>
+                        SDR
+                    </h1>
+                    <div style={{ fontSize: 12, color: T.muted }}>
+                        {range.label} · funil de entrada → MQL → agendamento → reunião → qualificação → closer
+                    </div>
                 </div>
+                <ModeToggle mode={mode} onChange={handleModeChange} />
+            </div>
+
+            {/* Banner de alertas (só se houver problema) */}
+            {!bannerDismissed && (
+                <MissingDataBanner
+                    targetsMissing={m.missingData.targetsMissing}
+                    spendUnavailable={m.missingData.spendUnavailable}
+                    staleSync={m.missingData.staleSync}
+                    onDismiss={() => setBannerDismissed(true)}
+                />
             )}
 
-            {/* ── 3. KPI STRIP ──────────────────────────────────────────────── */}
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 8 }}>
-                <KpiCard label="MQL" value={kpis.mql} delta={m.deltaVsPrev.dMql} color={C.blue} />
-                <KpiCard label="Agendamentos" value={kpis.agend} delta={m.deltaVsPrev.dAgend} color={C.amber} />
-                <KpiCard
-                    label="Taxa Agend."
-                    value={`${kpis.taxaAgend.toFixed(1)}%`}
-                    color={kpis.taxaAgend < 20 ? C.red : kpis.taxaAgend < 30 ? C.amber : C.green}
-                    alert={kpis.taxaAgend < 20}
-                />
-                <KpiCard label="Reunioes" value={kpis.reun} color={C.purple} />
-                <KpiCard label="Taxa Comparec." value={`${kpis.taxaComp.toFixed(1)}%`} color={C.green} />
-                <KpiCard label="Qualificados" value={kpis.qual} color={T.muted} />
-                <KpiCard label="Meta Agend." value="45%" color={T.muted} />
-            </div>
-
-            {/* ── 4. INVESTIGATION PANEL ────────────────────────────────────── */}
-            {investigateOpen && <InvestigationPanel m={m} />}
-
-            {/* ── 5. DAILY TREND CHART ──────────────────────────────────────── */}
-            <div style={s.card}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
-                    <div>
-                        <SectionTitle>Tendencia Diaria — Leads por Data de Entrada</SectionTitle>
-                        <div style={{ fontSize: 11, color: T.muted, marginTop: -8 }}>
-                            MQL = leads criados no dia · Taxa = % que agendou reuniao · Clique para detalhar
-                        </div>
-                    </div>
-                    <div style={{ display: "flex", gap: 14, alignItems: "center", fontSize: 11, color: T.muted }}>
-                        <span><span style={{ display: "inline-block", width: 10, height: 10, background: `${C.blue}80`, borderRadius: 2, marginRight: 4 }} />MQL</span>
-                        <span><span style={{ display: "inline-block", width: 10, height: 3, background: C.amber, marginRight: 4, verticalAlign: "middle" }} />Taxa %</span>
-                        <span><span style={{ display: "inline-block", width: 10, height: 3, background: `${C.purple}80`, marginRight: 4, verticalAlign: "middle", borderTop: "1px dashed" }} />Meta 45%</span>
-                    </div>
+            {/* HERO FUNIL: 6 cards + chevrons */}
+            <div
+                style={{
+                    background: T.card,
+                    border: `1px solid ${T.border}`,
+                    borderRadius: 14,
+                    padding: 18,
+                }}
+            >
+                <div style={{ ...s.label, marginBottom: 14 }}>Funil</div>
+                <div
+                    style={{
+                        display: "grid",
+                        gridTemplateColumns:
+                            "minmax(0,1fr) auto minmax(0,1fr) auto minmax(0,1fr) auto minmax(0,1fr) auto minmax(0,1fr) auto minmax(0,1fr)",
+                        alignItems: "stretch",
+                        gap: 10,
+                    }}
+                >
+                    {stageOrder.map((stageKey, idx) => {
+                        const stage = f[stageKey];
+                        const card = (
+                            <FunnelKpiCard
+                                key={stageKey}
+                                label={STAGE_LABEL_SHORT[stageKey]}
+                                stage={stage}
+                                onOpenDeals={() =>
+                                    setModal({
+                                        stageKey,
+                                        title: STAGE_TITLE[stageKey],
+                                        deals: stage.deals,
+                                    })
+                                }
+                            />
+                        );
+                        if (idx === stageOrder.length - 1) return card;
+                        // Chevron entre este card e o próximo, com taxa numerador/denominador
+                        const next = stageOrder[idx + 1];
+                        const chevron = (
+                            <FunnelChevron
+                                key={`chevron-${stageKey}-${next}`}
+                                numerator={f[next].current}
+                                denominator={stage.current}
+                                numeratorLabel={STAGE_LABEL_SHORT[next].toLowerCase()}
+                                denominatorLabel={STAGE_LABEL_SHORT[stageKey].toLowerCase()}
+                            />
+                        );
+                        return [card, chevron];
+                    })}
                 </div>
-                <ResponsiveContainer width="100%" height={190}>
-                    <ComposedChart
-                        data={m.dailyTrend}
-                        onClick={(e: any) => {
-                            if (e?.activeTooltipIndex != null) setSelectedDay(e.activeTooltipIndex);
-                        }}
-                    >
-                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false} />
-                        <XAxis dataKey="label" tick={{ fill: T.muted, fontSize: 10 }} axisLine={false} tickLine={false} />
-                        <YAxis yAxisId="l" tick={{ fill: T.muted, fontSize: 10 }} axisLine={false} tickLine={false} width={22} />
-                        <YAxis yAxisId="r" orientation="right" tick={{ fill: T.muted, fontSize: 10 }} axisLine={false} tickLine={false} width={30} domain={[0, 80]} unit="%" />
-                        <Tooltip content={<TrendTooltip />} cursor={{ fill: "rgba(255,255,255,0.03)" }} />
-                        <ReferenceLine yAxisId="r" y={45} stroke={`${C.purple}59`} strokeDasharray="5 3" />
-                        <Bar yAxisId="l" dataKey="mql" radius={[3, 3, 0, 0]} maxBarSize={20} cursor="pointer">
-                            {m.dailyTrend.map((entry, idx) => (
-                                <Cell
-                                    key={idx}
-                                    fill={
-                                        idx === selectedDay ? C.blue :
-                                        anomalyDaySet.has(idx) ? `${C.red}66` :
-                                        `${C.blue}59`
-                                    }
-                                    stroke={idx === selectedDay ? C.blue : "transparent"}
-                                    strokeWidth={1.5}
-                                />
-                            ))}
-                        </Bar>
-                        <Line yAxisId="r" type="monotone" dataKey="taxaAgend" stroke={C.amber} strokeWidth={2.5} dot={false} activeDot={{ r: 5, fill: C.amber, strokeWidth: 0 }} />
-                    </ComposedChart>
-                </ResponsiveContainer>
+                <div style={{ marginTop: 14, fontSize: 10, color: T.muted, fontStyle: "italic" }}>
+                    Clique em qualquer etapa para ver a lista de deals contados. Metas são proporcionalizadas
+                    linearmente a partir de monthly_targets ({daysInPeriod} dias × meta_mensal /{" "}
+                    {daysInTargetMonth} dias do mês).
+                </div>
             </div>
 
-            {/* ── 6. BOTTOM GRID ────────────────────────────────────────────── */}
-            <div style={{ display: "grid", gridTemplateColumns: dayData ? "1.1fr 0.9fr" : "1fr", gap: 12 }}>
-                {dayData && (
-                    <DayDetail day={dayData} onClose={() => setSelectedDay(null)} />
-                )}
-                <DOWHeatmap dowPattern={m.dowPattern} />
+            {/* INVESTIMENTO + CPL */}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+                <InvestmentCard
+                    spend={m.spend}
+                    target={spendTargetTotal != null ? { totalProrated: spendTargetTotal } : null}
+                    daysInTargetMonth={daysInTargetMonth}
+                    daysInPeriod={daysInPeriod}
+                />
+                <CplCard cpl={m.cpl} />
             </div>
 
-            {/* ── 7. MOTIVOS FULL WIDTH ─────────────────────────────────────── */}
-            <MotivosSection motivosCards={m.motivosCards} />
+            {/* INVESTIGATION (preservado) */}
+            {m.investigation && <InvestigationPanel m={m} />}
 
+            {/* DealsModal (única instância, controlada por estado) */}
+            <DealsModal
+                isOpen={modal !== null}
+                onClose={() => setModal(null)}
+                title={modal?.title ?? ""}
+                deals={modal?.deals ?? []}
+            />
         </div>
     );
 }
