@@ -120,6 +120,7 @@ function mapRowToWonDeal(row: any, groupIdFallback?: string, includeCf = false):
     return {
         id: String(row.id),
         cdate: row.created_at,
+        created_at: row.created_at ?? null,
         mdate: row.updated_at || undefined,
         status: STATUS_MAP[row.status] || "1",
         stage: row.stage || "Padrão",

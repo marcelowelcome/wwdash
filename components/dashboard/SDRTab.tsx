@@ -43,7 +43,8 @@ const fmtNumber = (n: number | null | undefined): string =>
 const fmtBrl = (n: number | null | undefined): string =>
     n == null ? "—" : `R$ ${new Intl.NumberFormat("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n)}`;
 
-const fmtPctSigned = (n: number): string => `${n >= 0 ? "+" : ""}${n.toFixed(1)}%`;
+/** Magnitude apenas, sem sinal — uso típico em pares com seta (↑/↓ + magnitude). */
+const fmtPctMagnitude = (n: number): string => `${Math.abs(n).toFixed(1)}%`;
 
 function deltaPercent(current: number, previous: number | null): number | null {
     if (previous == null || previous === 0) return null;
@@ -258,7 +259,7 @@ function FunnelKpiCard({
             </div>
             {delta != null ? (
                 <div style={{ fontSize: 11, marginTop: 6, color: delta >= 0 ? C.green : C.red, fontWeight: 500 }}>
-                    {delta >= 0 ? "↑" : "↓"} {fmtPctSigned(delta)} vs ant.
+                    {delta >= 0 ? "↑" : "↓"} {fmtPctMagnitude(delta)} vs ant.
                 </div>
             ) : (
                 <div style={{ fontSize: 11, marginTop: 6, color: T.muted }}>— vs ant.</div>
@@ -388,7 +389,7 @@ function InvestmentCard({
                         fontWeight: 500,
                     }}
                 >
-                    {delta >= 0 ? "↑" : "↓"} {fmtPctSigned(delta)} vs período anterior
+                    {delta >= 0 ? "↑" : "↓"} {fmtPctMagnitude(delta)} vs período anterior
                 </div>
             )}
             {targetPct != null && target?.totalProrated != null && (
@@ -462,7 +463,7 @@ function CplCard({
                         fontWeight: 500,
                     }}
                 >
-                    {delta < 0 ? "↓" : "↑"} {fmtPctSigned(delta)} vs período anterior
+                    {delta < 0 ? "↓" : "↑"} {fmtPctMagnitude(delta)} vs período anterior
                 </div>
             )}
             {targetPct != null && cpl.target != null && (

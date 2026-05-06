@@ -907,7 +907,10 @@ function computeStageCounts(
 
     for (const d of deals) {
         if (!isInLeadScope(d)) continue;
-        const inLeadByCreated = dateInRange(d.created_at, range.start, range.end);
+        // Defensive fallback: alguns mappers populam apenas o campo legacy
+        // `cdate`. Aceitamos ambos para não silenciar deals válidos.
+        const createdAtIso = d.created_at ?? d.cdate ?? null;
+        const inLeadByCreated = dateInRange(createdAtIso, range.start, range.end);
 
         // Lead — sempre por created_at no período (Lead/MQL não diferem entre modos).
         if (inLeadByCreated) {
