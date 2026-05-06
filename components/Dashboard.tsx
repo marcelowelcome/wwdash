@@ -461,7 +461,7 @@ export default function Dashboard() {
             <Header {...headerProps} />
             <div style={{ maxWidth: 1200, margin: "0 auto", padding: "24px 28px 48px" }}>
                 <TabErrorBoundary key={tab} tabLabel={TABS.find(t => t.id === tab)?.label}>
-                {tab === "overview" && <OverviewTab sdrDeals={sdrDeals} closerDeals={closerDeals} wonDeals={wonDeals} fieldMap={acFieldMap} stageMap={acStageMap} allDeals={allDeals} />}
+                {tab === "overview" && <OverviewTab sdrDeals={sdrDeals} closerDeals={closerDeals} wonDeals={wonDeals} fieldMap={acFieldMap} stageMap={acStageMap} allDeals={allDeals} period={periodSelection} />}
                 {tab === "sdr" && <SDRTab deals={sdrDeals} fieldMap={acFieldMap} />}
                 {tab === "funnel" && <FunnelTab m={metrics} />}
                 {tab === "closer" && <CloserTab m={metrics} />}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useMemo } from "react";
 import {
     ComposedChart, Line, BarChart, Bar,
     XAxis, YAxis, CartesianGrid, Tooltip,
@@ -13,6 +13,7 @@ import { OverviewFunnelTable } from "./OverviewFunnelTable";
 import { T, statusColor } from "./theme";
 import { computeOverviewMetrics } from "@/lib/metrics-overview";
 import { type Deal, type WonDeal } from "@/lib/schemas";
+import { resolvePeriod, type PeriodSelection } from "@/lib/period-selection";
 
 interface OverviewTabProps {
     sdrDeals: Deal[];
@@ -21,129 +22,22 @@ interface OverviewTabProps {
     fieldMap: Record<string, string>;
     stageMap: Record<string, string>;
     allDeals: WonDeal[];
+    period: PeriodSelection;
 }
 
-function getWeekStart(): string {
-    const now = new Date();
-    const day = now.getDay();
-    const diff = day === 0 ? 6 : day - 1;
-    const monday = new Date(now);
-    monday.setDate(now.getDate() - diff);
-    return monday.toISOString().slice(0, 10);
-}
-
-function todayStr(): string {
-    return new Date().toISOString().slice(0, 10);
-}
-
-function daysAgoStr(n: number): string {
-    const d = new Date();
-    d.setDate(d.getDate() - n);
-    return d.toISOString().slice(0, 10);
-}
-
-type Shortcut = "week" | "4weeks" | "3months" | "full" | null;
-
-function detectShortcut(startStr: string, endStr: string): Shortcut {
-    const today = todayStr();
-    if (endStr !== today) return null;
-    if (startStr === getWeekStart()) return "week";
-    if (startStr === daysAgoStr(28)) return "4weeks";
-    if (startStr === daysAgoStr(90)) return "3months";
-    if (startStr <= "2020-01-01") return "full";
-    return null;
-}
-
-export function OverviewTab({ sdrDeals, closerDeals, wonDeals, fieldMap, stageMap, allDeals }: OverviewTabProps) {
-    const [startStr, setStartStr] = useState(getWeekStart);
-    const [endStr, setEndStr] = useState(todayStr);
-
-    const activeShortcut = detectShortcut(startStr, endStr);
-
-    const periodStart = useMemo(() => {
-        const d = new Date(startStr + "T00:00:00");
-        return isNaN(d.getTime()) ? new Date() : d;
-    }, [startStr]);
-
-    const periodEnd = useMemo(() => {
-        const d = new Date(endStr + "T23:59:59");
-        return isNaN(d.getTime()) ? new Date() : d;
-    }, [endStr]);
+export function OverviewTab({ sdrDeals, closerDeals, wonDeals, fieldMap, stageMap, allDeals, period }: OverviewTabProps) {
+    // Período vem do seletor global do header (PeriodSelection).
+    const range = useMemo(() => resolvePeriod(period), [period]);
+    const periodStart = range.start;
+    const periodEnd = range.end;
 
     const m = useMemo(
         () => computeOverviewMetrics(sdrDeals, closerDeals, wonDeals, fieldMap, stageMap, periodStart, periodEnd),
         [sdrDeals, closerDeals, wonDeals, fieldMap, stageMap, periodStart, periodEnd]
     );
 
-    const applyShortcut = (key: string) => {
-        const today = todayStr();
-        setEndStr(today);
-        switch (key) {
-            case "week": setStartStr(getWeekStart()); break;
-            case "4weeks": setStartStr(daysAgoStr(28)); break;
-            case "3months": setStartStr(daysAgoStr(90)); break;
-            case "full": setStartStr("2020-01-01"); break;
-        }
-    };
-
-    const shortcuts = [
-        { key: "week", label: "Semana" },
-        { key: "4weeks", label: "4 Semanas" },
-        { key: "3months", label: "3 Meses" },
-        { key: "full", label: "Tudo" },
-    ];
-
-    const inputStyle: React.CSSProperties = {
-        background: T.surface,
-        color: T.white,
-        border: `1px solid ${T.border}`,
-        borderRadius: 6,
-        padding: "4px 8px",
-        fontSize: 11,
-        fontFamily: "inherit",
-        cursor: "pointer",
-        colorScheme: "dark",
-    };
-
     return (
         <div style={{ display: "flex", flexDirection: "column", gap: 22 }}>
-            {/* Period Selector */}
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 8, flexWrap: "wrap" }}>
-                {shortcuts.map(s => (
-                    <button
-                        key={s.key}
-                        onClick={() => applyShortcut(s.key)}
-                        style={{
-                            background: activeShortcut === s.key ? T.gold : T.card,
-                            color: activeShortcut === s.key ? T.bg : T.muted,
-                            border: `1px solid ${T.border}`,
-                            borderRadius: 6,
-                            padding: "4px 10px",
-                            fontSize: 11,
-                            fontWeight: 600,
-                            cursor: "pointer",
-                            transition: "all 0.2s"
-                        }}
-                    >
-                        {s.label}
-                    </button>
-                ))}
-                <span style={{ color: T.muted, fontSize: 11, margin: "0 4px" }}>|</span>
-                <input
-                    type="date"
-                    value={startStr}
-                    onChange={e => setStartStr(e.target.value)}
-                    style={inputStyle}
-                />
-                <span style={{ color: T.muted, fontSize: 11 }}>ate</span>
-                <input
-                    type="date"
-                    value={endStr}
-                    onChange={e => setEndStr(e.target.value)}
-                    style={inputStyle}
-                />
-            </div>
-
             {/* KPI Row */}
             <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 14 }}>
                 <KpiCard
