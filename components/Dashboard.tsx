@@ -56,6 +56,13 @@ const TABS: { id: TabId; label: string }[] = [
     { id: "chat", label: "Chat IA" },
 ];
 
+/**
+ * Abas que renderizam o próprio controle de período (mensal, filter buttons,
+ * etc.) e portanto NÃO mostram o seletor "Janela" global. Adicionar aqui
+ * conforme abas evoluírem para terem seu próprio controle.
+ */
+const TABS_WITH_LOCAL_PERIOD = new Set<TabId>(["funnel-metas", "sdr"]);
+
 // ─── HEADER ───────────────────────────────────────────────────────────────────
 interface SyncLog {
     id: number;
@@ -181,12 +188,12 @@ function Header({ tab, setTab, metrics, loading, lastUpdate, onRefresh, onVersio
                     </button>
                 ))}
                 {/*
-                    O seletor global "Janela" é escondido em abas que operam
-                    nativamente por mês (e não por range arbitrário). Hoje
-                    apenas a aba "Funil de Metas" se enquadra — ela tem seu
-                    próprio MonthSelector + fetches por (year, month).
+                    O seletor global "Janela" é escondido em abas que possuem
+                    seu próprio controle de período local — para não duplicar
+                    visualmente nem deixar o usuário confuso sobre qual seletor
+                    está governando os números da aba.
                 */}
-                {tab !== "funnel-metas" && (
+                {!TABS_WITH_LOCAL_PERIOD.has(tab) && (
                     <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 4, padding: "0 4px" }}>
                         <PeriodSelector value={period} onChange={onPeriodChange} />
                     </div>
