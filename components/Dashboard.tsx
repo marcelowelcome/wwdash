@@ -227,6 +227,9 @@ export default function Dashboard() {
     // Wedding monthly target + spend agregado para a janela atual (SDRTab v2)
     const [sdrTarget, setSdrTarget] = useState<MonthlyTarget | null>(null);
     const [sdrSpend, setSdrSpend] = useState<{ meta: number; google: number; partial: boolean } | null>(null);
+    // Deals dos pipelines WW que NÃO são SDR/Closer (Planejamento, Internacional, Desqualificados).
+    // Necessários para o funil SDR contar Lead ⊋ MQL — sem isso, Lead = MQL.
+    const [wwExtraDeals, setWwExtraDeals] = useState<WonDeal[]>([]);
     const chat = useChat();
 
     // Global period filter (persisted in localStorage; migra do schema antigo)
@@ -372,6 +375,26 @@ export default function Dashboard() {
         };
     }, [periodSelection]);
 
+    // Fetch dos 3 grupos WW que não vêm em sdrDeals/closerDeals (Planejamento, Internacional, Desqualificados).
+    // Combinados com sdrDeals + closerDeals dão o universo "Lead" do funil SDR.
+    useEffect(() => {
+        const range = resolvePeriod(periodSelection);
+        const fetchRange = { start: range.start, end: range.end };
+        let cancelled = false;
+        Promise.allSettled([
+            fetchAllDealsFromDb("4", fetchRange),
+            fetchAllDealsFromDb("17", fetchRange),
+            fetchAllDealsFromDb("31", fetchRange),
+        ]).then(results => {
+            if (cancelled) return;
+            const all = results.flatMap(r => r.status === "fulfilled" ? r.value : []);
+            setWwExtraDeals(all);
+        });
+        return () => {
+            cancelled = true;
+        };
+    }, [periodSelection]);
+
     const handleSync = useCallback(async () => {
         setSyncing(true);
         setSyncResult(null);
@@ -456,6 +479,12 @@ export default function Dashboard() {
         [wonDeals, sdrDeals, closerDeals]
     );
 
+    // Universo Lead/MQL do SDRTab: 5 pipelines WW (1, 3, 4, 17, 31) deduplicados.
+    const wwAllDeals = useMemo(
+        () => deduplicateDeals([...sdrDeals, ...closerDeals, ...wwExtraDeals]),
+        [sdrDeals, closerDeals, wwExtraDeals]
+    );
+
     const chatContext = useMemo(
         () => metrics ? buildTabContext(tab, { metrics, sdrDeals, closerDeals, wonDeals, fieldMap: acFieldMap, stageMap: acStageMap }) : "",
         [tab, metrics, sdrDeals, closerDeals, wonDeals, acFieldMap, acStageMap]
@@ -507,7 +536,7 @@ export default function Dashboard() {
                 {tab === "overview" && <OverviewTab sdrDeals={sdrDeals} closerDeals={closerDeals} wonDeals={wonDeals} fieldMap={acFieldMap} stageMap={acStageMap} allDeals={allDeals} period={periodSelection} />}
                 {tab === "sdr" && (
                     <SDRTab
-                        deals={sdrDeals}
+                        deals={wwAllDeals}
                         fieldMap={acFieldMap}
                         period={periodSelection}
                         targets={sdrTarget}

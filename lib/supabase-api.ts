@@ -37,6 +37,9 @@ export const TRAINING_MOTIVE = "Para closer ter mais reuniões";
 const GROUP_TO_PIPELINE: Record<string, string> = {
     "1": "SDR Weddings",
     "3": "Closer Weddings",
+    "4": "Planejamento Weddings",
+    "17": "WW - Internacional",
+    "31": "Outros Desqualificados | Wedding",
 };
 
 // Internal IDs for field mapping (since we don't have AC field IDs)
