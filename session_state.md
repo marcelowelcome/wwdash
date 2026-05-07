@@ -1,10 +1,12 @@
 # Session State — DashWW
 
-**Última atualização:** 2026-05-06 (sessão encerrada)
+**Última atualização:** 2026-05-06 23:30 BRT (sessão encerrada — auditoria + sprint plan)
 **Versão em produção (kpi-weddings):** 2.9.0 — redesign da aba Closer (funil 3 etapas + CAC/CPL/Tempo + Cohort de Fechamento)
 **Branch:** `main`
-**Último commit kpi-weddings:** redesign Closer (push: 2026-05-06) + `bf73044` + `99ff0eb` + `78c8337` + `06fe00a` + `adb5f6d`
+**Último commit kpi-weddings:** `8a02086` (feat(closer): redesign 2.9.0) + `bf73044` + 4 commits SDR
 **Último commit dash-webhook:** `b3d5a22` (push: 2026-04-30 — migration board endpoint)
+
+> 🎯 **Próxima sessão (07/mai manhã, após apresentação do usuário):** ler [docs/SPRINTS_2026-05-07.md](docs/SPRINTS_2026-05-07.md) — auditoria criteriosa de 20 achados consolidada em 5 sprints priorizados. **Ordem sugerida:** Sprint 1 (segurança crítica, 75min) → Sprint 2 (métricas de receita Closer: Ticket Médio, ROAS, LTV:CAC, Win/destino, 3-4h) → Sprint 3 (data quality, 2-3h) → Sprint 4 (code cleanup, 3-4h) → Sprint 5 (backlog).
 
 > Documento vivo — atualize a cada sessão encerrada. Registra o *estado presente* (o que está pronto, em voo, travado).
 > A seção **Runbook** abaixo tem diagnóstico passo-a-passo dos problemas operacionais que já enfrentamos. **Consulte-a antes de gastar tempo investigando do zero.**
@@ -150,7 +152,53 @@ Em ordem cronológica:
 
 ---
 
-## Histórico da sessão atual (2026-05-06, parte 2 — redesign Closer)
+## Histórico da sessão atual (2026-05-06, parte 3 — auditoria + sprint plan)
+
+Após v2.9.0 (Closer) ir pra produção, o usuário pediu **auditoria criteriosa**
+do dashboard inteiro: gaps, oportunidades, falhas de segurança, e qualquer
+coisa que comprometa a precisão ou o uso. Apresentação de manhã (07/mai) então
+o trabalho não vai ser executado nesta sessão — só documentado para amanhã.
+
+**Auditoria executada via Agent Explore (1 prompt amplo cobrindo qualidade de
+código + dívida técnica + segurança).** 20 achados consolidados:
+
+- **4 críticos** (segurança): `/api/chat` sem auth, `SYNC_SECRET` vazio, RLS
+  "allow all", `BOARD_API_KEY` em texto puro local + vazada.
+- **4 altos** (data quality + UX): badge "spend parcial" inline ausente,
+  outlier guard em tempo até fechamento, indicador de freshness do
+  `ads_spend_cache`, fetch redundante (~30% bandwidth desperdiçado).
+- **7 médios:** small-n cohort, índices Supabase, validação Zod sync, WIP
+  raiz, dead code metrics.ts, `reuniao_closer` schema, MonthSelector tests.
+- **5 informativos:** truncação silenciosa fetchAllDeals, duplicação 285
+  linhas SDR↔Closer, casts `any`/`as unknown`, arquivos >900 linhas, sem Sentry.
+
+**Validações importantes (refutei alguns achados):**
+- Timezone: NÃO é problema. Supabase retorna timestamps com `+00:00` (UTC).
+  `new Date()` interpreta correto.
+- `.env.local` está gitignored (linha 34 do `.gitignore`).
+- `/api/board/weekly` é o padrão correto a seguir (Bearer + timingSafeEqual + rate-limit).
+
+**Métricas growth sugeridas que NÃO entraram na v2.9.0** (foram para Sprint 2):
+Ticket Médio, ROAS, LTV:CAC, Win rate por destino, Pipeline value, Forecast.
+
+**Documentação criada/atualizada:**
+1. **[docs/SPRINTS_2026-05-07.md](docs/SPRINTS_2026-05-07.md)** (novo, 350 linhas) —
+   5 sprints priorizados com critérios de aceite, estimativas, dependências.
+   Sprint 1: segurança (75min). Sprint 2: receita Closer (3-4h). Sprint 3:
+   data quality (2-3h). Sprint 4: code cleanup (3-4h). Sprint 5: backlog.
+2. Este `session_state.md` — parte 3 do histórico + apontador para o sprint plan.
+
+**Quick wins recomendados (priorizar se tempo apertar amanhã):**
+1. Sprint 1.2 + 1.3 (`SYNC_SECRET` + RLS) — 15min, fecha 2 vetores graves.
+2. Sprint 2.1 + 2.2 (Ticket Médio + ROAS) — diretor pede toda semana.
+3. Sprint 3.7 (índices Supabase) — 15min, escala futura.
+
+Commits desta parte: nenhum push. Apenas documento `docs/SPRINTS_2026-05-07.md`
+e atualização de `session_state.md`.
+
+---
+
+## Histórico da sessão (2026-05-06, parte 2 — redesign Closer)
 
 Continuação da sessão. Após estabilizar a SDR (parte 1), o usuário pediu redesign
 da aba **Closer** seguindo o mesmo padrão growth-first, focando o final da jornada:
