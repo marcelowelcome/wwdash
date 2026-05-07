@@ -86,13 +86,15 @@ describe("v2 — Lead vs MQL pipeline filtering", () => {
         expect(m.funnelDetailed.mql.current).toBe(1);
     });
 
-    it("title 'EW%' é excluído", () => {
+    it("title 'EW%' É incluído (decisão Marketing 06/05/2026)", () => {
+        // Antes excluía; agora leads com prefixo EW são leads válidos.
+        // Apenas `is_elopement === true` exclui.
         const deals = [
             deal({ id: "1", pipeline: "SDR Weddings", title: "EW - Couple A", created_at: "2026-04-22T15:00:00Z" }),
             deal({ id: "2", pipeline: "SDR Weddings", title: "DW - Couple B", created_at: "2026-04-22T15:00:00Z" }),
         ];
         const m = computeSDRMetrics(deals, fieldMap(), period);
-        expect(m.funnelDetailed.lead.current).toBe(1);
+        expect(m.funnelDetailed.lead.current).toBe(2);
     });
 });
 
@@ -249,9 +251,9 @@ describe("v2 — targets prorrateados linearmente", () => {
     });
 });
 
-// ─── Spend block + CPL ────────────────────────────────────────────────────
+// ─── Spend block + CPL (Custo por Lead) + cpMql (Custo por MQL) ──────────
 
-describe("v2 — spend e CPL", () => {
+describe("v2 — spend, CPL (Lead) e cpMql", () => {
     it("spend.total = meta + google", () => {
         const m = computeSDRMetrics([], fieldMap(), period, {
             spend: { meta: 5200, google: 3250 },
@@ -261,7 +263,7 @@ describe("v2 — spend e CPL", () => {
         expect(m.spend?.total).toBe(8450);
     });
 
-    it("CPL atual = spend total / mql", () => {
+    it("CPL (Lead) e cpMql calculam corretamente quando Lead==MQL", () => {
         const deals = [
             deal({ id: "1", pipeline: "SDR Weddings", created_at: "2026-04-22T10:00Z" }),
             deal({ id: "2", pipeline: "SDR Weddings", created_at: "2026-04-23T10:00Z" }),
@@ -271,30 +273,53 @@ describe("v2 — spend e CPL", () => {
         const m = computeSDRMetrics(deals, fieldMap(), period, {
             spend: { meta: 300, google: 200 },
         });
+        expect(m.funnelDetailed.lead.current).toBe(4);
         expect(m.funnelDetailed.mql.current).toBe(4);
-        expect(m.cpl?.current).toBe(125); // 500 / 4
+        expect(m.cpl?.current).toBe(125); // 500 / 4 leads
+        expect(m.cpMql?.current).toBe(125); // 500 / 4 mqls
     });
 
-    it("CPL = null quando spend ausente", () => {
+    it("CPL e cpMql divergem quando alguns leads NÃO viram MQL (Internacional/Desqualif)", () => {
+        const deals = [
+            // 4 leads válidos no SDR (também viram MQL)
+            deal({ id: "1", pipeline: "SDR Weddings", created_at: "2026-04-22T10:00Z" }),
+            deal({ id: "2", pipeline: "SDR Weddings", created_at: "2026-04-23T10:00Z" }),
+            // 2 leads em Internacional (contam Lead, não MQL)
+            deal({ id: "3", pipeline: "WW - Internacional", created_at: "2026-04-22T10:00Z" }),
+            deal({ id: "4", pipeline: "Outros Desqualificados | Wedding", created_at: "2026-04-23T10:00Z" }),
+        ];
+        const m = computeSDRMetrics(deals, fieldMap(), period, {
+            spend: { meta: 300, google: 100 },
+        });
+        expect(m.funnelDetailed.lead.current).toBe(4);
+        expect(m.funnelDetailed.mql.current).toBe(2);
+        expect(m.cpl?.current).toBe(100); // 400 / 4 leads
+        expect(m.cpMql?.current).toBe(200); // 400 / 2 mqls
+    });
+
+    it("CPL e cpMql = null quando spend ausente", () => {
         const m = computeSDRMetrics([], fieldMap(), period, { spend: null });
         expect(m.cpl).toBeNull();
+        expect(m.cpMql).toBeNull();
         expect(m.spend).toBeNull();
     });
 
-    it("CPL atual = null quando MQL = 0", () => {
+    it("CPL atual = null quando Lead=0; cpMql = null quando MQL=0", () => {
         const m = computeSDRMetrics([], fieldMap(), period, {
             spend: { meta: 100, google: 100 },
         });
         expect(m.spend?.total).toBe(200);
-        expect(m.cpl?.current).toBeNull();
+        expect(m.cpl?.current).toBeNull(); // sem leads → cpl null
+        expect(m.cpMql?.current).toBeNull(); // sem mqls → cpMql null
     });
 
-    it("target CPL vem do monthly_targets sem prorratear", () => {
+    it("target CPL (Lead) vem de monthly_targets.cpl; cpMql sem coluna → target null", () => {
         const m = computeSDRMetrics([], fieldMap(), period, {
             spend: { meta: 100, google: 100 },
             targets: targetsFull,
         });
-        expect(m.cpl?.target).toBe(100);
+        expect(m.cpl?.target).toBe(100); // monthly_targets.cpl
+        expect(m.cpMql?.target).toBeNull(); // sem coluna em monthly_targets
     });
 });
 

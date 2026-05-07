@@ -227,7 +227,6 @@ export default function Dashboard() {
     // Wedding monthly target + spend agregado para a janela atual (SDRTab v2)
     const [sdrTarget, setSdrTarget] = useState<MonthlyTarget | null>(null);
     const [sdrSpend, setSdrSpend] = useState<{ meta: number; google: number; partial: boolean } | null>(null);
-    const [sdrPrevSpend, setSdrPrevSpend] = useState<{ meta: number; google: number } | null>(null);
     const chat = useChat();
 
     // Global period filter (persisted in localStorage; migra do schema antigo)
@@ -351,29 +350,21 @@ export default function Dashboard() {
 
     // ─── SDRTab v2 — fetch de target mensal + spend (Meta + Google) por range ───
     // Roda em paralelo com `loadData`. Não bloqueia render do dashboard.
+    // (Comparação contra período anterior foi descontinuada porque o pipeline
+    // é vivo — leads mudam de estágio, então a comparação não é justa.)
     useEffect(() => {
         const range = resolvePeriod(periodSelection);
         const yearOfEnd = range.end.getUTCFullYear();
         const monthOfEnd = range.end.getUTCMonth() + 1;
-        // Período anterior = mesma duração imediatamente antes.
-        const duration = range.end.getTime() - range.start.getTime();
-        const prevEnd = new Date(range.start.getTime() - 1);
-        const prevStart = new Date(prevEnd.getTime() - duration);
 
         let cancelled = false;
         Promise.allSettled([
             fetchMonthlyTarget(yearOfEnd, monthOfEnd, "wedding"),
             fetchAdsSpendByRange(range.start, range.end),
-            fetchAdsSpendByRange(prevStart, prevEnd),
-        ]).then(([targetRes, spendRes, prevSpendRes]) => {
+        ]).then(([targetRes, spendRes]) => {
             if (cancelled) return;
             setSdrTarget(targetRes.status === "fulfilled" ? targetRes.value : null);
             setSdrSpend(spendRes.status === "fulfilled" ? spendRes.value : null);
-            setSdrPrevSpend(
-                prevSpendRes.status === "fulfilled"
-                    ? { meta: prevSpendRes.value.meta, google: prevSpendRes.value.google }
-                    : null,
-            );
         });
 
         return () => {
@@ -521,7 +512,6 @@ export default function Dashboard() {
                         period={periodSelection}
                         targets={sdrTarget}
                         spend={sdrSpend}
-                        previousSpend={sdrPrevSpend}
                     />
                 )}
                 {tab === "funnel" && <FunnelTab m={metrics} />}

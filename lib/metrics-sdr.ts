@@ -138,8 +138,11 @@ export interface SDRMetrics {
     /** Bloco de investimento (Meta + Google) ou null se spend não disponível. */
     spend: SDRSpendBlock | null;
 
-    /** Custo por MQL ou null se spend ou mql ausentes. */
+    /** Custo por Lead (spend total / Lead.current). null se spend ou Lead ausentes. */
     cpl: SDRCplBlock | null;
+
+    /** Custo por MQL (spend total / MQL.current). null se spend ou MQL ausentes. */
+    cpMql: SDRCplBlock | null;
 
     /** Sinais de dados ausentes — alimenta o banner do redesign. */
     missingData: SDRMissingData;
@@ -179,12 +182,21 @@ export interface SDRSpendBlock {
     previousTotal: number | null;
 }
 
+/**
+ * Bloco genérico de "custo por X". Usado tanto para Custo por Lead (cpl)
+ * quanto Custo por MQL (cpMql) — denominador difere, denominador.value é
+ * cravado pelo motor.
+ */
 export interface SDRCplBlock {
-    /** Custo por MQL no período = total spend / mql.current. null se mql=0. */
+    /** Custo absoluto = total spend / denominator. null se denominator=0. */
     current: number | null;
-    /** CPL no período anterior. */
+    /** Mesmo cálculo no período anterior (mantido para futura comparação). */
     previous: number | null;
-    /** Meta CPL (de `monthly_targets.cpl`). NÃO prorrateia (é taxa). */
+    /**
+     * Meta. Para CPL (custo por lead) vem de `monthly_targets.cpl` direto.
+     * Para Custo por MQL não há coluna dedicada → null.
+     * NÃO prorrateia (é taxa, não volume).
+     */
     target: number | null;
 }
 
@@ -797,7 +809,14 @@ export function computeSDRMetrics(
         options,
     );
     const spendBlock = buildSpendBlock(options);
-    const cplBlock = buildCplBlock(spendBlock, funnelDetailed.mql, options);
+    // Custo por Lead = spend / Lead. Meta vem de monthly_targets.cpl direto.
+    const cplBlock = buildCostBlock(
+        spendBlock,
+        funnelDetailed.lead,
+        options.targets?.cpl ?? null,
+    );
+    // Custo por MQL = spend / MQL. Sem coluna de meta em monthly_targets → null.
+    const cpMqlBlock = buildCostBlock(spendBlock, funnelDetailed.mql, null);
     const missingData = buildMissingData(options, funnelDetailed);
 
     return {
@@ -825,6 +844,7 @@ export function computeSDRMetrics(
         funnelDetailed,
         spend: spendBlock,
         cpl: cplBlock,
+        cpMql: cpMqlBlock,
         missingData,
     };
 }
@@ -835,14 +855,17 @@ export function computeSDRMetrics(
 
 /**
  * Filtros de escopo WW para o funil v2.
- * Lead = todo deal criado em pipeline WW (5 pipelines), excluindo elopement
- * e títulos `EW%`. MQL = Lead + pipeline IN ['SDR Weddings','Closer Weddings',
- * 'Planejamento Weddings'] (i.e., sem 'WW - Internacional' nem 'Outros
- * Desqualificados | Wedding'). Decisão registrada no plano de redesign.
+ * Lead = todo deal criado em pipeline WW (5 pipelines), excluindo apenas
+ * `is_elopement === true` (deals tagueados explicitamente como elopement).
+ * Títulos com prefixo `EW` SÃO incluídos — leads bonafide podem usar esse
+ * prefixo (decisão de marketing 06/05/2026).
+ *
+ * MQL = Lead + pipeline IN ['SDR Weddings','Closer Weddings','Planejamento
+ * Weddings'] (i.e., sem 'WW - Internacional' nem 'Outros Desqualificados |
+ * Wedding').
  */
 function isInLeadScope(d: WonDeal): boolean {
-    if (isElopement(d)) return false;
-    if (d.title && /^EW/i.test(d.title)) return false;
+    if (d.is_elopement === true) return false;
     return isInWwPipeline(d);
 }
 
@@ -1010,18 +1033,25 @@ function buildSpendBlock(options: SDROptions): SDRSpendBlock | null {
     };
 }
 
-function buildCplBlock(
+/**
+ * Custo por X. `denominatorStage` é a etapa do funil cujo `current`/`previous`
+ * vira denominador. `target` é opcional — passe null para custo-por-MQL (sem
+ * coluna em monthly_targets) ou monthly_targets.cpl para custo-por-lead.
+ */
+function buildCostBlock(
     spend: SDRSpendBlock | null,
-    mqlStage: FunnelStage,
-    options: SDROptions,
+    denominatorStage: FunnelStage,
+    target: number | null,
 ): SDRCplBlock | null {
     if (!spend) return null;
-    const current = mqlStage.current > 0 ? Math.round((spend.total / mqlStage.current) * 100) / 100 : null;
-    const previous =
-        spend.previousTotal != null && mqlStage.previous > 0
-            ? Math.round((spend.previousTotal / mqlStage.previous) * 100) / 100
+    const current =
+        denominatorStage.current > 0
+            ? Math.round((spend.total / denominatorStage.current) * 100) / 100
             : null;
-    const target = options.targets?.cpl != null ? options.targets.cpl : null;
+    const previous =
+        spend.previousTotal != null && denominatorStage.previous > 0
+            ? Math.round((spend.previousTotal / denominatorStage.previous) * 100) / 100
+            : null;
     return { current, previous, target };
 }
 

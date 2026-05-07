@@ -43,14 +43,6 @@ const fmtNumber = (n: number | null | undefined): string =>
 const fmtBrl = (n: number | null | undefined): string =>
     n == null ? "—" : `R$ ${new Intl.NumberFormat("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n)}`;
 
-/** Magnitude apenas, sem sinal — uso típico em pares com seta (↑/↓ + magnitude). */
-const fmtPctMagnitude = (n: number): string => `${Math.abs(n).toFixed(1)}%`;
-
-function deltaPercent(current: number, previous: number | null): number | null {
-    if (previous == null || previous === 0) return null;
-    return ((current - previous) / previous) * 100;
-}
-
 /* ─── MiniBar (preservado, usado no InvestigationPanel + ProgressBar) ───── */
 function MiniBar({ pct, color = C.blue, height = 5 }: { pct: number; color?: string; height?: number }) {
     return (
@@ -214,8 +206,7 @@ function FunnelKpiCard({
     stage: FunnelStage;
     onOpenDeals: () => void;
 }) {
-    const { current, previous, target } = stage;
-    const delta = deltaPercent(current, previous);
+    const { current, target } = stage;
     const targetPct = target != null && target > 0 ? (current / target) * 100 : null;
     const statusColor = targetStatusColor(targetPct);
     const [hover, setHover] = useState(false);
@@ -257,15 +248,8 @@ function FunnelKpiCard({
             >
                 {fmtNumber(current)}
             </div>
-            {delta != null ? (
-                <div style={{ fontSize: 11, marginTop: 6, color: delta >= 0 ? C.green : C.red, fontWeight: 500 }}>
-                    {delta >= 0 ? "↑" : "↓"} {fmtPctMagnitude(delta)} vs ant.
-                </div>
-            ) : (
-                <div style={{ fontSize: 11, marginTop: 6, color: T.muted }}>— vs ant.</div>
-            )}
             {targetPct != null ? (
-                <div style={{ marginTop: 12 }}>
+                <div style={{ marginTop: 14 }}>
                     <MiniBar pct={targetPct} color={statusColor} height={4} />
                     <div
                         style={{
@@ -353,7 +337,6 @@ function InvestmentCard({
         );
     }
 
-    const delta = deltaPercent(spend.total, spend.previousTotal);
     const targetPct =
         target?.totalProrated != null && target.totalProrated > 0
             ? (spend.total / target.totalProrated) * 100
@@ -380,18 +363,6 @@ function InvestmentCard({
             <div style={{ fontSize: 11, color: T.muted, marginTop: 6, lineHeight: 1.6 }}>
                 Meta {fmtBrl(spend.meta)} · Google {fmtBrl(spend.google)}
             </div>
-            {delta != null && (
-                <div
-                    style={{
-                        fontSize: 11,
-                        marginTop: 8,
-                        color: delta >= 0 ? C.green : C.red,
-                        fontWeight: 500,
-                    }}
-                >
-                    {delta >= 0 ? "↑" : "↓"} {fmtPctMagnitude(delta)} vs período anterior
-                </div>
-            )}
             {targetPct != null && target?.totalProrated != null && (
                 <div style={{ marginTop: 14 }}>
                     <MiniBar pct={targetPct} color={statusColor} height={4} />
@@ -413,34 +384,39 @@ function InvestmentCard({
     );
 }
 
-/* ─── CplCard ────────────────────────────────────────────────────────────── */
-function CplCard({
-    cpl,
+/* ─── CostCard (genérico para Custo por Lead e Custo por MQL) ───────────── */
+function CostCard({
+    label,
+    cost,
+    denominatorLabel,
 }: {
-    cpl: { current: number | null; previous: number | null; target: number | null } | null;
+    label: string;
+    cost: { current: number | null; previous: number | null; target: number | null } | null;
+    denominatorLabel: string;
 }) {
-    if (!cpl) {
+    if (!cost) {
         return (
             <div style={s.card}>
-                <div style={s.label}>Custo por MQL</div>
+                <div style={s.label}>{label}</div>
                 <div style={{ fontSize: 22, fontWeight: 200, color: T.muted, marginTop: 8, ...s.mono }}>—</div>
-                <div style={{ fontSize: 11, color: T.muted, marginTop: 6 }}>Spend e/ou MQL não disponíveis.</div>
+                <div style={{ fontSize: 11, color: T.muted, marginTop: 6 }}>
+                    Spend e/ou {denominatorLabel} não disponíveis.
+                </div>
             </div>
         );
     }
 
-    const delta = deltaPercent(cpl.current ?? 0, cpl.previous);
-    // CPL: menor é melhor → "verde" quando atual <= meta.
+    // Custo: menor é melhor → "verde" quando atual <= meta.
     const targetPct =
-        cpl.current != null && cpl.target != null && cpl.target > 0
-            ? (cpl.current / cpl.target) * 100
+        cost.current != null && cost.target != null && cost.target > 0
+            ? (cost.current / cost.target) * 100
             : null;
     const statusColor =
         targetPct == null ? T.muted : targetPct <= 100 ? C.green : targetPct <= 120 ? C.amber : C.red;
 
     return (
         <div style={s.card}>
-            <div style={s.label}>Custo por MQL</div>
+            <div style={s.label}>{label}</div>
             <div
                 style={{
                     fontSize: 30,
@@ -451,22 +427,9 @@ function CplCard({
                     ...s.mono,
                 }}
             >
-                {fmtBrl(cpl.current)}
+                {fmtBrl(cost.current)}
             </div>
-            {delta != null && (
-                <div
-                    style={{
-                        fontSize: 11,
-                        marginTop: 8,
-                        // Para CPL, queda é boa → invertido
-                        color: delta < 0 ? C.green : delta > 0 ? C.red : T.muted,
-                        fontWeight: 500,
-                    }}
-                >
-                    {delta < 0 ? "↓" : "↑"} {fmtPctMagnitude(delta)} vs período anterior
-                </div>
-            )}
-            {targetPct != null && cpl.target != null && (
+            {targetPct != null && cost.target != null ? (
                 <div style={{ marginTop: 14 }}>
                     <MiniBar pct={Math.min(targetPct, 200)} color={statusColor} height={4} />
                     <div
@@ -479,8 +442,12 @@ function CplCard({
                         }}
                     >
                         <span>{targetPct.toFixed(0)}% da meta</span>
-                        <span style={{ color: statusColor, fontWeight: 600 }}>meta {fmtBrl(cpl.target)}</span>
+                        <span style={{ color: statusColor, fontWeight: 600 }}>meta {fmtBrl(cost.target)}</span>
                     </div>
+                </div>
+            ) : (
+                <div style={{ marginTop: 14, fontSize: 10, color: T.muted, fontStyle: "italic" }}>
+                    sem meta definida
                 </div>
             )}
         </div>
@@ -714,7 +681,6 @@ interface SDRTabProps {
     period: PeriodSelection;
     targets: MonthlyTarget | null;
     spend: { meta: number; google: number; partial: boolean } | null;
-    previousSpend: { meta: number; google: number } | null;
 }
 
 const MODE_STORAGE_KEY = "ww-sdr-mode";
@@ -749,7 +715,7 @@ const STAGE_LABEL_SHORT: Record<keyof SDRMetrics["funnelDetailed"], string> = {
     agCloser: "Ag. Closer",
 };
 
-export function SDRTab({ deals, fieldMap, period, targets, spend, previousSpend }: SDRTabProps) {
+export function SDRTab({ deals, fieldMap, period, targets, spend }: SDRTabProps) {
     const [mode, setMode] = useState<SDRMode>(loadModeFromStorage);
     const [bannerDismissed, setBannerDismissed] = useState(false);
     const [modal, setModal] = useState<ModalState | null>(null);
@@ -777,11 +743,10 @@ export function SDRTab({ deals, fieldMap, period, targets, spend, previousSpend 
                 mode,
                 targets,
                 spend: spend ? { meta: spend.meta, google: spend.google } : null,
-                previousSpend: previousSpend ?? null,
                 daysInTargetMonth,
                 spendPartial: spend?.partial === true,
             }),
-        [deals, fieldMap, range, mode, targets, spend, previousSpend, daysInTargetMonth],
+        [deals, fieldMap, range, mode, targets, spend, daysInTargetMonth],
     );
 
     // Meta de spend prorrateada (apenas para apresentação no InvestmentCard).
@@ -900,15 +865,16 @@ export function SDRTab({ deals, fieldMap, period, targets, spend, previousSpend 
                 </div>
             </div>
 
-            {/* INVESTIMENTO + CPL */}
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+            {/* INVESTIMENTO + Custo por Lead + Custo por MQL */}
+            <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr 1fr", gap: 14 }}>
                 <InvestmentCard
                     spend={m.spend}
                     target={spendTargetTotal != null ? { totalProrated: spendTargetTotal } : null}
                     daysInTargetMonth={daysInTargetMonth}
                     daysInPeriod={daysInPeriod}
                 />
-                <CplCard cpl={m.cpl} />
+                <CostCard label="Custo por Lead" cost={m.cpl} denominatorLabel="Lead" />
+                <CostCard label="Custo por MQL" cost={m.cpMql} denominatorLabel="MQL" />
             </div>
 
             {/* INVESTIGATION (preservado) */}
