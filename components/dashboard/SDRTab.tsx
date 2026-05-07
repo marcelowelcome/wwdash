@@ -201,10 +201,12 @@ function FunnelKpiCard({
     label,
     stage,
     onOpenDeals,
+    definition,
 }: {
     label: string;
     stage: FunnelStage;
     onOpenDeals: () => void;
+    definition?: string;
 }) {
     const { current, target } = stage;
     const targetPct = target != null && target > 0 ? (current / target) * 100 : null;
@@ -217,6 +219,7 @@ function FunnelKpiCard({
             onClick={onOpenDeals}
             onMouseEnter={() => setHover(true)}
             onMouseLeave={() => setHover(false)}
+            title={definition}
             aria-label={`${label}: ${current}. Abrir lista de deals.`}
             style={{
                 width: "100%",
@@ -715,6 +718,24 @@ const STAGE_LABEL_SHORT: Record<keyof SDRMetrics["funnelDetailed"], string> = {
     agCloser: "Ag. Closer",
 };
 
+// Definição precisa de cada etapa — exibida no tooltip do card (hover do título do botão)
+// e pode ser referida em revisões. Manter sincronizado com `isInLeadScope` /
+// `isInMqlScope` / `computeStageCounts` em lib/metrics-sdr.ts.
+const STAGE_DEFINITION: Record<keyof SDRMetrics["funnelDetailed"], string> = {
+    lead:
+        "Leads — entrada bruta. Conta deals com created_at no período em qualquer pipeline WW (SDR Weddings, Closer Weddings, Planejamento Weddings, WW - Internacional, Outros Desqualificados | Wedding) + Elopment Wedding. Inclui leads com prefixo 'EW' no título.",
+    mql:
+        "MQL — Lead que entrou no funil de venda principal: pipeline ∈ {SDR Weddings, Closer Weddings, Planejamento Weddings}. Exclui Elopment (linha de produto separada), Internacional (operação à parte) e Desqualificados.",
+    agendamento:
+        "Agendamento — MQL com data_reuniao_1 dentro do período (modo Evento) ou já marcada (modo Coorte). Conta o evento independente de quando o lead entrou.",
+    realizada:
+        "Reunião realizada — Agendamento com como_reuniao_1 ≠ vazio e ≠ 'Não teve reunião'. Reuniões marcadas para o futuro ainda não têm como_reuniao_1, então não contam até acontecerem.",
+    qualificacao:
+        "Qualificação SDR — MQL com data_qualificado dentro do período. Etapa formal do SDR antes de passar para o Closer.",
+    agCloser:
+        "Agendamento Closer — MQL com data_closer (Data e horário do agendamento com a Closer) dentro do período. Em 'Este mês' o range estende até o fim do mês para capturar reuniões já marcadas para o futuro.",
+};
+
 export function SDRTab({ deals, fieldMap, period, targets, spend }: SDRTabProps) {
     const [mode, setMode] = useState<SDRMode>(loadModeFromStorage);
     const [bannerDismissed, setBannerDismissed] = useState(false);
@@ -826,7 +847,7 @@ export function SDRTab({ deals, fieldMap, period, targets, spend }: SDRTabProps)
                                 i
                             </span>
                         )}
-                        <span>· funil de entrada → MQL → agendamento → reunião → qualificação → closer</span>
+                        <span>· lead (entrada bruta, inclui Elopment) → MQL (SDR + Closer + Planejamento) → agendamento → reunião → qualificação → closer</span>
                     </div>
                 </div>
                 <ModeToggle mode={mode} onChange={handleModeChange} />
@@ -868,6 +889,7 @@ export function SDRTab({ deals, fieldMap, period, targets, spend }: SDRTabProps)
                                 key={stageKey}
                                 label={STAGE_LABEL_SHORT[stageKey]}
                                 stage={stage}
+                                definition={STAGE_DEFINITION[stageKey]}
                                 onOpenDeals={() =>
                                     setModal({
                                         stageKey,

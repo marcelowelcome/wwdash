@@ -2,7 +2,7 @@ import { type Deal, type WonDeal, type MonthlyTarget } from "./schemas";
 import { parseDate, inRange, daysAgo } from "./utils";
 import {
     isElopement,
-    isInWwPipeline,
+    isInWwLeadsPipeline,
     isInWwMqlPipeline,
 } from "./funnel-utils";
 
@@ -862,23 +862,38 @@ export function computeSDRMetrics(
 // ═══════════════════════════════════════════════════════════════════════════
 
 /**
- * Filtros de escopo WW para o funil v2.
- * Lead = todo deal criado em pipeline WW (5 pipelines), excluindo apenas
- * `is_elopement === true` (deals tagueados explicitamente como elopement).
+ * Filtros de escopo do funil SDR v2.
+ *
+ * ── LEAD ─────────────────────────────────────────────────────────────────
+ * Universo bruto de **aquisição qualificada** — todo deal que entrou em
+ * qualquer pipeline da Welcome Weddings, **incluindo Elopment**.
+ * Pipelines: SDR Weddings · Closer Weddings · Planejamento Weddings ·
+ * WW - Internacional · Outros Desqualificados | Wedding · Elopment Wedding.
+ *
+ * Por que incluir Elopment? Elopment é uma linha de produto da WW (mini-wedding)
+ * e o lead pago entrou pela mesma porta. Para análise de aquisição (custo por
+ * lead, volume de funil de entrada), todo deal criado conta. Decisão alinhada
+ * com a aba "Funil do Mês" (06/05/2026).
+ *
  * Títulos com prefixo `EW` SÃO incluídos — leads bonafide podem usar esse
  * prefixo (decisão de marketing 06/05/2026).
  *
- * MQL = Lead + pipeline IN ['SDR Weddings','Closer Weddings','Planejamento
- * Weddings'] (i.e., sem 'WW - Internacional' nem 'Outros Desqualificados |
- * Wedding').
+ * ── MQL ──────────────────────────────────────────────────────────────────
+ * Subset de Lead que segue para o funil de venda principal:
+ * pipeline ∈ ['SDR Weddings', 'Closer Weddings', 'Planejamento Weddings'].
+ * Exclui Elopment (linha de produto separada com seu próprio funil), exclui
+ * Internacional (operação à parte) e Desqualificados (lixeira).
+ *
+ * Implicação numérica: Lead - MQL = Internacional + Desqualificados + Elopment.
+ * Etapas seguintes (Agendamento, Reunião, Qualificação, Closer) usam escopo
+ * MQL — Elopment não infla nenhuma etapa além de Lead.
  */
 function isInLeadScope(d: WonDeal): boolean {
-    if (d.is_elopement === true) return false;
-    return isInWwPipeline(d);
+    return isInWwLeadsPipeline(d);
 }
 
 function isInMqlScope(d: WonDeal): boolean {
-    return isInLeadScope(d) && isInWwMqlPipeline(d);
+    return isInWwMqlPipeline(d);
 }
 
 /** True se a coluna de data está dentro de [start, end] (ambos inclusivos). */

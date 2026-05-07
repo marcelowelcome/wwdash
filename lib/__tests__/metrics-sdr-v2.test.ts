@@ -76,14 +76,17 @@ describe("v2 — Lead vs MQL pipeline filtering", () => {
         expect(m.funnelDetailed.mql.current).toBe(1); // só SDR Weddings
     });
 
-    it("elopement (is_elopement=true) é excluído de Lead E MQL", () => {
+    it("Elopment Wedding entra como Lead, NÃO como MQL (decisão 06/05/2026)", () => {
+        // Elopment é linha de produto WW e conta como aquisição qualificada.
+        // Mas tem funil próprio — não deve inflar etapas pós-MQL do funil SDR.
         const deals = [
-            deal({ id: "1", pipeline: "SDR Weddings", is_elopement: true, created_at: "2026-04-22T15:00:00Z" }),
-            deal({ id: "2", pipeline: "SDR Weddings", is_elopement: false, created_at: "2026-04-22T15:00:00Z" }),
+            deal({ id: "1", pipeline: "Elopment Wedding", created_at: "2026-04-22T15:00:00Z" }),
+            deal({ id: "2", pipeline: "SDR Weddings", created_at: "2026-04-22T15:00:00Z" }),
+            deal({ id: "3", pipeline: "Outros Desqualificados | Wedding", created_at: "2026-04-22T15:00:00Z" }),
         ];
         const m = computeSDRMetrics(deals, fieldMap(), period);
-        expect(m.funnelDetailed.lead.current).toBe(1);
-        expect(m.funnelDetailed.mql.current).toBe(1);
+        expect(m.funnelDetailed.lead.current).toBe(3);
+        expect(m.funnelDetailed.mql.current).toBe(1); // só SDR Weddings
     });
 
     it("title 'EW%' É incluído (decisão Marketing 06/05/2026)", () => {
