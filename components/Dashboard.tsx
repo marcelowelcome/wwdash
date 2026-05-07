@@ -392,6 +392,7 @@ export default function Dashboard() {
             fetchAllDealsFromDb("1", fetchRange),
             fetchAllDealsFromDb("3", fetchRange),
             fetchAllDealsFromDb("4", fetchRange),
+            fetchAllDealsFromDb("12", fetchRange),
             fetchAllDealsFromDb("17", fetchRange),
             fetchAllDealsFromDb("31", fetchRange),
         ]).then(results => {

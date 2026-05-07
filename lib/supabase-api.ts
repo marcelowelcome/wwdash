@@ -38,6 +38,7 @@ const GROUP_TO_PIPELINE: Record<string, string> = {
     "1": "SDR Weddings",
     "3": "Closer Weddings",
     "4": "Planejamento Weddings",
+    "12": "Elopment Wedding",
     "17": "WW - Internacional",
     "31": "Outros Desqualificados | Wedding",
 };
