@@ -119,6 +119,16 @@ function endOfPreviousMonthBrt(brtDay: string): string {
     return `${yy}-${mm}-${dd}`;
 }
 
+function endOfMonthBrt(brtDay: string): string {
+    const [y, m] = brtDay.split("-").map(Number);
+    // Último dia do mês corrente = dia 0 do próximo mês em UTC
+    const dt = new Date(Date.UTC(y, m, 0));
+    const yy = dt.getUTCFullYear();
+    const mm = String(dt.getUTCMonth() + 1).padStart(2, "0");
+    const dd = String(dt.getUTCDate()).padStart(2, "0");
+    return `${yy}-${mm}-${dd}`;
+}
+
 function startOfPreviousMonthBrt(brtDay: string): string {
     const lastDay = endOfPreviousMonthBrt(brtDay);
     const [y, m] = lastDay.split("-");
@@ -244,6 +254,53 @@ export function resolvePeriod(
     const daysBack = diffDaysBrt(startBrt, today) + 1; // inclusivo
 
     return { start, end, daysBack, label, preset: selection.preset };
+}
+
+/**
+ * Resolve período no modo "calendário" usado pelo funil SDR.
+ *
+ * Diferente de `resolvePeriod`, para o preset "this-month" estende o `end` até
+ * o último dia do mês (incluindo agendamentos futuros, ex: data_closer marcada
+ * pra dia 14). `last-month` já cobre o mês inteiro, então não muda. Para os
+ * demais presets ("last-30-days", "this-week", etc.) o range é o mesmo.
+ *
+ * Necessário para que o card "Agendamento Closer" conte reuniões já marcadas
+ * pra frente no mês — caso contrário, deals com `data_closer > hoje` somem.
+ *
+ * `daysElapsedInPeriod` informa quantos dias do período já se passaram (até
+ * hoje), usado pelo motor SDR para prorratear meta proporcional ao ritmo
+ * decorrido (não ao período total estendido).
+ */
+export function resolvePeriodForSdr(
+    selection: PeriodSelection,
+    now: Date = new Date(),
+): PeriodRange & { daysElapsedInPeriod: number; extendsToFuture: boolean } {
+    const today = todayBrtCalendar(now);
+    const base = resolvePeriod(selection, now);
+
+    if (selection.preset !== "this-month") {
+        // Para presets que já terminam em data passada (ou hoje), end real == end.
+        const elapsed = base.daysBack;
+        return { ...base, daysElapsedInPeriod: elapsed, extendsToFuture: false };
+    }
+
+    // "Este mês" — estende end até o último dia do mês.
+    const startBrt = startOfMonthBrt(today);
+    const endBrt = endOfMonthBrt(today);
+    const start = brtCalendarDayToUtc(startBrt, "start");
+    const end = brtCalendarDayToUtc(endBrt, "end");
+    const daysBack = diffDaysBrt(startBrt, endBrt) + 1; // tamanho do mês
+    const daysElapsedInPeriod = diffDaysBrt(startBrt, today) + 1; // dias até hoje
+
+    return {
+        start,
+        end,
+        daysBack,
+        label: base.label,
+        preset: selection.preset,
+        daysElapsedInPeriod,
+        extendsToFuture: true,
+    };
 }
 
 function formatBrtLabel(brtDay: string): string {

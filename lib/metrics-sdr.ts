@@ -223,6 +223,14 @@ export interface SDROptions {
      * Caller calcula com `new Date(year, month, 0).getDate()`. Default 30.
      */
     daysInTargetMonth?: number;
+    /**
+     * Dias do período já decorridos (até hoje). Usado para prorratear meta
+     * proporcional ao **ritmo** quando o `end` do range cobre o futuro
+     * (ex: preset "Este mês" estende até o último dia do mês — periodDays=31,
+     * mas só passou parte do mês). Sem este override, o cálculo usa
+     * `(end - start)` em dias, o que infla a meta quando há futuro no range.
+     */
+    daysElapsedInPeriod?: number;
     /** Sinaliza ao motor que a sync AC está atrasada (>6h). */
     staleSync?: boolean;
     /** Sinaliza ao motor que o spend retornado é parcial (gaps no daily cache). */
@@ -991,9 +999,16 @@ function computeFunnelDetailedV2(
     const prev = computeStageCounts(deals, { start: prevStart, end: prevEnd }, fSqlId, mode);
 
     // Prorrateio de target.
+    // Usa `daysElapsedInPeriod` quando o caller informa (presets que estendem
+    // ao futuro como "Este mês"); caso contrário, mede pelo range real.
     const daysInMonth = options.daysInTargetMonth ?? 30;
-    const periodMs = period.end.getTime() - period.start.getTime();
-    const periodDays = Math.max(1, Math.round(periodMs / (24 * 60 * 60 * 1000) + 0.5));
+    let periodDays: number;
+    if (options.daysElapsedInPeriod != null) {
+        periodDays = Math.max(1, options.daysElapsedInPeriod);
+    } else {
+        const periodMs = period.end.getTime() - period.start.getTime();
+        periodDays = Math.max(1, Math.round(periodMs / (24 * 60 * 60 * 1000) + 0.5));
+    }
     const proratedTarget = (monthly: number | null | undefined): number | null => {
         if (monthly == null || monthly < 0) return null;
         return Math.round((monthly * periodDays) / daysInMonth);

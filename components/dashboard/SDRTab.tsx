@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { T } from "./theme";
 import { DealsModal } from "./DealsModal";
 import { type SDRMetrics, type FunnelStage, type SDRMode, computeSDRMetrics } from "@/lib/metrics-sdr";
-import { resolvePeriod, type PeriodSelection } from "@/lib/period-selection";
+import { resolvePeriodForSdr, type PeriodSelection } from "@/lib/period-selection";
 import { type Deal, type WonDeal, type MonthlyTarget } from "@/lib/schemas";
 import { ownerName } from "@/lib/supabase-api";
 
@@ -720,11 +720,15 @@ export function SDRTab({ deals, fieldMap, period, targets, spend }: SDRTabProps)
     const [bannerDismissed, setBannerDismissed] = useState(false);
     const [modal, setModal] = useState<ModalState | null>(null);
 
-    // Range UTC + dias
-    const range = useMemo(() => resolvePeriod(period), [period]);
-    const periodMs = range.end.getTime() - range.start.getTime();
-    const daysInPeriod = Math.max(1, Math.round(periodMs / (24 * 60 * 60 * 1000) + 0.5));
+    // Range UTC + dias. SDR usa "modo calendário": preset "Este mês" estende
+    // até o fim do mês para que agendamentos futuros (data_reuniao_1, data_closer)
+    // entrem no funil. Outras presets continuam terminando em hoje.
+    const range = useMemo(() => resolvePeriodForSdr(period), [period]);
+    // Para o prorrateio de meta, o que importa é quantos dias do período já
+    // passaram (até hoje). Quando `extendsToFuture=true`, isso é < daysBack.
+    const daysInPeriod = range.daysElapsedInPeriod;
     const daysInTargetMonth = useMemo(() => {
+        // Mês do "fim efetivo" — para "Este mês" estendido, é o mês corrente.
         const y = range.end.getUTCFullYear();
         const m = range.end.getUTCMonth(); // 0-indexed; +1 para o "0 day" trick
         return new Date(y, m + 1, 0).getDate();
@@ -744,6 +748,7 @@ export function SDRTab({ deals, fieldMap, period, targets, spend }: SDRTabProps)
                 targets,
                 spend: spend ? { meta: spend.meta, google: spend.google } : null,
                 daysInTargetMonth,
+                daysElapsedInPeriod: range.daysElapsedInPeriod,
                 spendPartial: spend?.partial === true,
             }),
         [deals, fieldMap, range, mode, targets, spend, daysInTargetMonth],
@@ -791,8 +796,37 @@ export function SDRTab({ deals, fieldMap, period, targets, spend }: SDRTabProps)
                     >
                         SDR
                     </h1>
-                    <div style={{ fontSize: 12, color: T.muted }}>
-                        {range.label} · funil de entrada → MQL → agendamento → reunião → qualificação → closer
+                    <div style={{ fontSize: 12, color: T.muted, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                        <span>{range.label}</span>
+                        {range.extendsToFuture && (
+                            <span
+                                title={
+                                    "Modo calendário: o funil SDR conta o mês inteiro " +
+                                    "(01 → fim do mês), incluindo agendamentos já marcados " +
+                                    "para o futuro (data_reuniao_1, data_closer). Lead/MQL/Reunião " +
+                                    "realizada/Qualificação naturalmente só contam até hoje. " +
+                                    "Metas continuam prorrateadas pelos dias decorridos."
+                                }
+                                style={{
+                                    display: "inline-flex",
+                                    alignItems: "center",
+                                    justifyContent: "center",
+                                    width: 14,
+                                    height: 14,
+                                    borderRadius: "50%",
+                                    border: `1px solid ${T.muted}`,
+                                    fontSize: 9,
+                                    color: T.muted,
+                                    cursor: "help",
+                                    userSelect: "none",
+                                    fontWeight: 600,
+                                }}
+                                aria-label="Modo calendário"
+                            >
+                                i
+                            </span>
+                        )}
+                        <span>· funil de entrada → MQL → agendamento → reunião → qualificação → closer</span>
                     </div>
                 </div>
                 <ModeToggle mode={mode} onChange={handleModeChange} />

@@ -6,6 +6,7 @@ import {
     DEFAULT_SELECTION,
     loadPeriodFromStorage,
     resolvePeriod,
+    resolvePeriodForSdr,
     savePeriodToStorage,
     type PeriodSelection,
 } from "@/lib/period-selection";
@@ -227,9 +228,11 @@ export default function Dashboard() {
     // Wedding monthly target + spend agregado para a janela atual (SDRTab v2)
     const [sdrTarget, setSdrTarget] = useState<MonthlyTarget | null>(null);
     const [sdrSpend, setSdrSpend] = useState<{ meta: number; google: number; partial: boolean } | null>(null);
-    // Deals dos pipelines WW que NÃO são SDR/Closer (Planejamento, Internacional, Desqualificados).
-    // Necessários para o funil SDR contar Lead ⊋ MQL — sem isso, Lead = MQL.
-    const [wwExtraDeals, setWwExtraDeals] = useState<WonDeal[]>([]);
+    // Universo de deals do funil SDR: 5 pipelines WW (1, 3, 4, 17, 31) com janela
+    // estendida pra trás (90d antes do start) e pra frente (até endOfMonth quando
+    // preset = "Este mês"). Sem o buffer, deals criados antes do período mas com
+    // data_closer/data_reuniao_1 no período somem das contagens.
+    const [sdrAllDeals, setSdrAllDeals] = useState<WonDeal[]>([]);
     const chat = useChat();
 
     // Global period filter (persisted in localStorage; migra do schema antigo)
@@ -375,20 +378,26 @@ export default function Dashboard() {
         };
     }, [periodSelection]);
 
-    // Fetch dos 3 grupos WW que não vêm em sdrDeals/closerDeals (Planejamento, Internacional, Desqualificados).
-    // Combinados com sdrDeals + closerDeals dão o universo "Lead" do funil SDR.
+    // Fetch dos 5 grupos WW para o funil SDR com janela estendida.
+    // - start estendido 90 dias pra trás: pega deals criados antes do período
+    //   mas com `data_closer`/`data_reuniao_1` no período (caso comum).
+    // - end estendido até endOfMonth (modo calendário) quando preset = "Este mês":
+    //   inclui agendamentos futuros já marcados.
     useEffect(() => {
-        const range = resolvePeriod(periodSelection);
-        const fetchRange = { start: range.start, end: range.end };
+        const sdrRange = resolvePeriodForSdr(periodSelection);
+        const fetchStart = new Date(sdrRange.start.getTime() - 90 * 24 * 60 * 60 * 1000);
+        const fetchRange = { start: fetchStart, end: sdrRange.end };
         let cancelled = false;
         Promise.allSettled([
+            fetchAllDealsFromDb("1", fetchRange),
+            fetchAllDealsFromDb("3", fetchRange),
             fetchAllDealsFromDb("4", fetchRange),
             fetchAllDealsFromDb("17", fetchRange),
             fetchAllDealsFromDb("31", fetchRange),
         ]).then(results => {
             if (cancelled) return;
-            const all = results.flatMap(r => r.status === "fulfilled" ? r.value : []);
-            setWwExtraDeals(all);
+            const merged = results.flatMap(r => r.status === "fulfilled" ? r.value : []);
+            setSdrAllDeals(deduplicateDeals(merged));
         });
         return () => {
             cancelled = true;
@@ -479,12 +488,6 @@ export default function Dashboard() {
         [wonDeals, sdrDeals, closerDeals]
     );
 
-    // Universo Lead/MQL do SDRTab: 5 pipelines WW (1, 3, 4, 17, 31) deduplicados.
-    const wwAllDeals = useMemo(
-        () => deduplicateDeals([...sdrDeals, ...closerDeals, ...wwExtraDeals]),
-        [sdrDeals, closerDeals, wwExtraDeals]
-    );
-
     const chatContext = useMemo(
         () => metrics ? buildTabContext(tab, { metrics, sdrDeals, closerDeals, wonDeals, fieldMap: acFieldMap, stageMap: acStageMap }) : "",
         [tab, metrics, sdrDeals, closerDeals, wonDeals, acFieldMap, acStageMap]
@@ -536,7 +539,7 @@ export default function Dashboard() {
                 {tab === "overview" && <OverviewTab sdrDeals={sdrDeals} closerDeals={closerDeals} wonDeals={wonDeals} fieldMap={acFieldMap} stageMap={acStageMap} allDeals={allDeals} period={periodSelection} />}
                 {tab === "sdr" && (
                     <SDRTab
-                        deals={wwAllDeals}
+                        deals={sdrAllDeals}
                         fieldMap={acFieldMap}
                         period={periodSelection}
                         targets={sdrTarget}
