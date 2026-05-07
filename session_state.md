@@ -1,9 +1,9 @@
 # Session State — DashWW
 
-**Última atualização:** 2026-05-04 (sessão encerrada)
-**Versão em produção (kpi-weddings):** 2.7.0 — endpoint `/api/board/weekly` v1 + fix de detecção de reunião closer
+**Última atualização:** 2026-05-06 (sessão encerrada)
+**Versão em produção (kpi-weddings):** 2.8.1 — iteração na aba SDR (modo calendário, Lead inclui Elopment, tooltips)
 **Branch:** `main`
-**Último commit kpi-weddings:** `307af10` (push: 2026-05-04, antes de série de doc updates)
+**Último commit kpi-weddings:** `99ff0eb` (push: 2026-05-06 — fetch grupo 12 Elopment) + `78c8337` + `06fe00a` + `adb5f6d`
 **Último commit dash-webhook:** `b3d5a22` (push: 2026-04-30 — migration board endpoint)
 
 > Documento vivo — atualize a cada sessão encerrada. Registra o *estado presente* (o que está pronto, em voo, travado).
@@ -15,8 +15,9 @@
 
 ### kpi-weddings ✅
 - Tudo da v2.6.1 + camada a11y (entregue em 16/abr).
-- **Novo desde 16/abr:** `12e4072` — avg time in stage, executive summary e expandable lead details na aba Jornada.
-- Deploy desbloqueado em 30/abr (estava travado em "Pending" por 2 semanas; ver Runbook A).
+- **v2.7.0 (04/mai):** endpoint `/api/board/weekly` para Cowork + fix detecção reunião closer.
+- **v2.8.0 (06/mai):** redesign completo da aba SDR — funil de 6 etapas (Lead → MQL → Agendamento → Reunião → Qualificação → Closer), DealsModal por etapa, modo Coorte/Evento, banner de alertas.
+- **v2.8.1 (06/mai, mesma sessão):** iterações sobre o redesign — modo calendário p/ "Este mês" (inclui agendamentos futuros), Lead inclui Elopment (paridade com Funil do Mês), tooltips por etapa com STAGE_DEFINITION, fetch dos 6 grupos WW (1, 3, 4, 12, 17, 31) com buffer 90d.
 - URL de produção: https://weddings-kpi.vercel.app/
 
 ### dash-webhook ✅ (nova realidade compreendida)
@@ -131,7 +132,7 @@ Tokens podem ter vencido. Console do browser na aba Network vai mostrar a chamad
 
 ---
 
-## Histórico da sessão atual (2026-04-30)
+## Histórico da sessão (2026-04-30)
 
 Em ordem cronológica:
 
@@ -148,7 +149,70 @@ Em ordem cronológica:
 
 ---
 
-## Histórico da sessão atual (2026-05-04)
+## Histórico da sessão atual (2026-05-06)
+
+Iterações sobre o redesign SDR v2 entregue mesmo dia (commit `bc55b6b`). Após
+publicação da v2.8.0, o usuário (analista de growth) abriu o dashboard em
+produção e encontrou 4 bugs em sequência. Cada um descobriu o próximo —
+documentação cronológica abaixo:
+
+1. **Bug 1: Lead == MQL em produção** (`adb5f6d`). Dashboard mostrava ambos com
+   245. Causa: `loadFromSupabase` só faz fetch dos grupos 1 e 3, mas o filtro
+   MQL-vs-Lead requer também 4 (Planejamento), 17 (Internacional) e 31
+   (Desqualificados). Sem esses grupos, o universo Lead == universo MQL. Fix:
+   estender `GROUP_TO_PIPELINE` para 5 entries + novo `useEffect` puxando 4/17/31
+   em paralelo + novo `wwAllDeals` deduplicado passado ao SDRTab.
+
+2. **Bug 2: AG. CLOSER = 0 em "Este mês"** (`06fe00a`). Print do AC mostrava 7
+   reuniões closer agendadas, dashboard zero. Causa dupla descoberta após
+   query Supabase: (a) `fetchAllDealsFromDb` filtra `created_at >= start`, então
+   deals criados em abril com `data_closer` em maio nem entram no fetch;
+   (b) `end = hoje` exclui agendamentos futuros (Tiago 14/05, Camila/Nathalia
+   07/05). Fix: nova `resolvePeriodForSdr` que estende `end = endOfMonth` para
+   preset "Este mês"; fetch dos 5 grupos com `start − 90 dias`; novo
+   `daysElapsedInPeriod` para preservar prorrateio de meta pelo ritmo
+   decorrido. Tooltip (i) ao lado de "Este mês" explica o modo.
+
+3. **Bug 3: Lead 260 vs Funil do Mês 340 em abril** (`78c8337`). Inconsistência
+   entre abas. Análise: aba Funil do Mês usa `isInWwLeadsPipeline` (5 WW +
+   Elopment); SDR usava `isInWwPipeline` + `!is_elopement`. Diferença = 80 deals
+   Elopment. Decisão de produto: Lead é entrada bruta (incluindo Elopment),
+   MQL é funil de venda (excluindo Elopment). Implementação: `isInLeadScope`
+   passa a usar `isInWwLeadsPipeline`; `STAGE_DEFINITION` adiciona tooltip nativo
+   por card; subtitle do header ganha glossário inline; teste atualizado para
+   "Elopment é Lead, NÃO é MQL"; memória de projeto criada
+   (`project_sdr_funnel_definition.md`).
+
+4. **Bug 4: Lead continuou 260 mesmo após 78c8337** (`99ff0eb`). O `isInLeadScope`
+   incluía Elopment, mas o fetch do Dashboard ainda não. `GROUP_TO_PIPELINE`
+   não tinha grupo 12, e o `useEffect` SDR não puxava esse grupo. Os 80 deals
+   Elopment nem chegavam ao motor. Fix: registrar `12 → "Elopment Wedding"` em
+   `GROUP_TO_PIPELINE` + adicionar `fetchAllDealsFromDb("12", fetchRange)` ao
+   `useEffect` SDR. Validação: Lead em abr/2026 passa para 340.
+
+5. **Documentação consolidada:**
+   - JSDoc denso em [lib/metrics-sdr.ts:isInLeadScope/isInMqlScope](lib/metrics-sdr.ts).
+   - `STAGE_DEFINITION` em [components/dashboard/SDRTab.tsx](components/dashboard/SDRTab.tsx) — tooltip nativo por card.
+   - Subtitle do header com glossário inline.
+   - Memória de projeto: [project_sdr_funnel_definition.md](../../.claude/projects/-home-marcelo-DashWW/memory/project_sdr_funnel_definition.md).
+   - Bump em `lib/versions.ts` (2.8.0 → 2.8.1) com 13 changes documentadas.
+   - Atualização deste `session_state.md`.
+
+**Validações:** `tsc --noEmit` limpo após cada commit. Vitest 305/310 (5 falhas
+pré-existentes em `MonthSelector.test.tsx`, fora do escopo). `next build` exit 0.
+Validado contra Supabase com queries diretas em abril/2026 e maio/2026 — Lead
+e Ag. Closer batem com fonte de verdade (AC + Funil do Mês).
+
+**Lições/feedback registrado:** "valide antes de assumir que funciona". Após o
+push do bug 1 reportei como concluído; user precisou empurrar de volta com
+outra evidência de que estava quebrado. Resposta correta foi escrever um script
+Node com motor real (`scripts/validate-sdr-funnel.mjs`) que mimetiza o que o
+Dashboard faz e roda contra Supabase de produção. Padrão a repetir em fixes
+não-triviais que dependem de dados reais.
+
+---
+
+## Histórico da sessão (2026-05-04)
 
 Em ordem cronológica:
 
@@ -162,23 +226,6 @@ Em ordem cronológica:
 8. **Smoke test 5 cenários (commits 22c1e53, fc3ae66, 53a5ebc):** WW 200 com `reunioes_closer: 6`, WT 200 com kpi_caveats, 401 sem auth, 400 INVALID_RANGE, 422 INVALID_BRAND. Latência cold-start ~2s, warm ~500ms. Hashes WW=`a0e037…` e WT=`4195e9…` para baseline de drift detection.
 9. **Documentação Cowork:** `docs/cowork-instructions.md` (system prompt do Claude Cowork) e `docs/cowork-kickoff-prompt.md` (mensagem para disparar primeiro dry-run + checklist de validação).
 10. **Secrets handling:** `BOARD_API_KEY` adicionada ao `.env.local` (gitignored) e doc não-versionado em `/home/marcelo/DashWW/.secrets-cowork.md` com procedimento de rotação. Recomendada rotação antes do cut-over de produção (chave vazou em chat).
-
----
-
-## Histórico da sessão anterior (2026-04-30)
-
-Em ordem cronológica:
-
-1. **Diagnóstico inicial:** identificado bloqueador da Sprint 1 — build do dash-webhook com `fetchMetaAdsSpend(year, month, pipeline: ViewType)` chamado com 2 args em `/total`, `/trips`, `/wedding`.
-2. **Fix v1 (errado):** alteração temporária de `fetchMetaAdsSpend` para 2 args + `.is('pipeline', null)` baseada na migration `006_fix_ads_cache_pipeline.sql`. Type-check, vitest e build passaram local. **Quase commitei sem validar dados.**
-3. **Validação SQL** (a pedido do usuário): `ads_spend_cache` em prod tem **38 rows meta com `pipeline='wedding'` + 3 órfãs com `pipeline=NULL` (R$ 0)** + 29 rows google com `pipeline='wedding'`. **Convenção viva é `'wedding'`, não `null`** — o fix v1 zeraria o dashboard.
-4. **Fix v2 (Opção Y, correto):** revert do v1; `fetchGoogleAdsSpend` ganha `pipeline: ViewType` e usa `.eq` (estava lendo `.is(null)` e mostrando R$ 0 silencioso há ≥20 dias); call sites passam `'wedding'` em /total e /wedding, `'trips'` em /trips; `refresh/route.ts` cron writer passa a gravar `pipeline='wedding'` via constante `ANCHOR_PIPELINE`. Validado tsc/vitest/build, commit `4d09807`.
-5. **SQL de limpeza** das 3 órfãs `pipeline=NULL` em meta_ads — rodado pelo usuário com sucesso.
-6. **Vercel kpi-weddings desbloqueado:** deploy de `12e4072` que estava em "Pending" há 2 semanas foi destravado pelo usuário (provavelmente cancelando o deploy mais antigo da fila para liberar o slot do plano Hobby). `weddings-kpi.vercel.app` voltou a servir conteúdo fresco (`age: 105s` pós-fix).
-7. **Push do `4d09807`** no dash-webhook efetivado em origin/main.
-8. **Investigação do dash-webhook em prod (becos sem saída):** sondagem de URLs Vercel (`dash-webhook.vercel.app`, `ww-dash.vercel.app`, etc.) mostrou que o único deploy ativo (`ww-dash.vercel.app`) é zumbi — middleware redireciona tudo para `/login`, `/api/auth` retorna 404 (rota recente que não existe na build deployada). **Conclusão: dash-webhook não roda como Next.js em prod.**
-9. **Descoberta da arquitetura real:** kpi-weddings tem suas próprias rotas `/api/sync-meta-ads` e `/api/sync-google-ads`, disparadas client-side por `Dashboard.tsx` e `FunnelMetaTab.tsx` ao montar. **Não há cron**. A "última atualização em 09/abr" coincide com a última vez que alguém abriu o dashboard antes do build travar.
-10. **Validação final:** usuário abriu https://weddings-kpi.vercel.app/, sync rodou, `ads_spend_cache` voltou a atualizar. Sprint 1 fechada.
 
 ---
 
@@ -205,10 +252,14 @@ Em ordem cronológica:
 
 ---
 
-## Snapshot de testes (fim da sessão 04/mai)
+## Snapshot de testes (fim da sessão 06/mai)
 
-- **kpi-weddings Vitest:** **256/261** verdes (198 anteriores + 58 do `lib/board/__tests__/` novos). Mantidas as 5 falhas pré-existentes em `MonthSelector.test.tsx` (PR #5 Google Ads, sem relação).
-- **dash-webhook Vitest:** 72/72 verdes (não houve mudança de código nesta sessão; só migration adicionada).
-- **Type-check (ambos):** limpos.
-- **Builds locais:** ambos exit 0.
-- **Produção kpi-weddings:** `caa22fa` Ready (último commit antes da série de doc-updates de hoje), endpoint `/api/board/weekly` respondendo 200 em <500ms warm.
+- **kpi-weddings Vitest:** **305/310** verdes (256 anteriores + 27 do `metrics-sdr-v2.test.ts` + 22 doutros). Mantidas as 5 falhas pré-existentes em `MonthSelector.test.tsx` (PR #5 Google Ads, sem relação).
+- **dash-webhook Vitest:** 72/72 verdes (não houve mudança de código nesta sessão).
+- **Type-check (kpi-weddings):** limpo.
+- **Build local kpi-weddings:** exit 0 (cleanup ~28s + static gen ~2s).
+- **Produção kpi-weddings:** `99ff0eb` em deploy (push 22:21 BRT, deve estar Ready ~1-2min depois). Versão exibida no header: 2.8.1.
+- **Validação contra Supabase em produção** (06/mai):
+  - Lead em abr/2026 = 340 (225 SDR + 20 Closer + 2 Planej + 1 Internacional + 12 Desqualif + 80 Elopment) ✅ bate com Funil do Mês.
+  - MQL em abr/2026 = 247.
+  - AG. CLOSER em mai/2026 (modo calendário) = 6 (Mariana, Ana, Cristiane, Nathalia, Camila, Tiago).

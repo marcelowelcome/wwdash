@@ -7,6 +7,26 @@ export interface VersionEntry {
 
 export const VERSION_HISTORY: VersionEntry[] = [
     {
+        version: "2.8.1",
+        date: "06/05/2026",
+        description: "Iteração na aba SDR — modo calendário para 'Este mês' (incluindo agendamentos futuros), Lead inclui Elopment (alinhado com Funil do Mês), tooltips por etapa e contagem do funil completa.",
+        changes: [
+            "Bug crítico corrigido: dashboard mostrava AG. CLOSER = 0 quando claramente havia reuniões agendadas no mês. Causa dupla: fetchAllDealsFromDb filtrava por created_at no período (deals criados antes ficavam de fora), e end=hoje excluía agendamentos no futuro.",
+            "Nova fn resolvePeriodForSdr em lib/period-selection.ts: para preset 'Este mês' estende end até endOfMonth (modo calendário), incluindo agendamentos já marcados para o futuro. Demais presets inalterados. Retorna daysElapsedInPeriod para o motor prorratear meta pelo ritmo decorrido (não pelo mês inteiro).",
+            "Fetch dos pipelines WW para o SDR usa janela estendida: start − 90 dias (buffer pra trás) até endOfMonth. Sem isso, deals criados em meses anteriores com data_closer/data_reuniao_1 no período corrente sumiam.",
+            "Lead = aquisição bruta agora inclui Elopment Wedding (6 pipelines). MQL continua restrito a SDR + Closer + Planejamento (3 pipelines). Diferença bate com aba Funil do Mês: Lead − MQL = Internacional + Desqualificados + Elopment. Decisão alinhada com convenção de growth marketing.",
+            "Novo grupo 12 (Elopment Wedding) registrado em GROUP_TO_PIPELINE e adicionado ao fetch SDR no Dashboard.tsx. Sem isso, expandir o escopo Lead não tinha efeito (deals nem chegavam ao motor).",
+            "Lead/MQL agora são contados a partir dos 5+1 grupos WW (1, 3, 4, 12, 17, 31) deduplicados, não só dos pipelines do SDR/Closer. Pipelines 4, 17 e 31 estavam fora do fetch original — Lead/MQL apareciam idênticos em produção.",
+            "STAGE_DEFINITION em SDRTab.tsx: tooltip nativo (hover) em cada card do funil com a definição precisa de Lead, MQL, Agendamento, Reunião, Qualificação e Ag. Closer. Sincronizado com isInLeadScope/isInMqlScope.",
+            "Subtitle do header SDR ganhou glossário inline: 'lead (entrada bruta, inclui Elopment) → MQL (SDR + Closer + Planejamento) → ...'.",
+            "Tooltip (i) ao lado de 'Este mês' explica o modo calendário quando ativo.",
+            "Removido card 'vs período anterior' de todas as etapas — pipeline é vivo (leads mudam de estágio), comparação não é justa. Cards mostram apenas atingimento de meta.",
+            "Custo por Lead (CPL) e Custo por MQL agora são cards separados. CPL tem meta de monthly_targets.cpl; cpMql não tem meta (informativo).",
+            "Filtro de title 'EW%' removido do escopo Lead — leads bonafide podem usar esse prefixo (decisão Marketing).",
+            "Documentação: project_sdr_funnel_definition.md em memory; JSDoc denso em isInLeadScope/isInMqlScope; comentário sobre fetch ampliado em Dashboard.tsx. Validado contra Supabase em abril/2026: Lead = 340, MQL = 247.",
+        ],
+    },
+    {
         version: "2.8.0",
         date: "06/05/2026",
         description: "Redesign completo da aba SDR como dashboard de growth marketing — funil de 6 etapas (Lead → MQL → Agendamento → Reunião → Qualificação → Closer) com comparação tripla (atual × meta prorrateada × período anterior), bloco de investimento + CPL, modo Coorte/Evento e DealsModal por etapa.",
