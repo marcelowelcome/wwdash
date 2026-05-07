@@ -1,9 +1,9 @@
 # Session State — DashWW
 
 **Última atualização:** 2026-05-06 (sessão encerrada)
-**Versão em produção (kpi-weddings):** 2.8.1 — iteração na aba SDR (modo calendário, Lead inclui Elopment, tooltips)
+**Versão em produção (kpi-weddings):** 2.9.0 — redesign da aba Closer (funil 3 etapas + CAC/CPL/Tempo + Cohort de Fechamento)
 **Branch:** `main`
-**Último commit kpi-weddings:** `99ff0eb` (push: 2026-05-06 — fetch grupo 12 Elopment) + `78c8337` + `06fe00a` + `adb5f6d`
+**Último commit kpi-weddings:** redesign Closer (push: 2026-05-06) + `bf73044` + `99ff0eb` + `78c8337` + `06fe00a` + `adb5f6d`
 **Último commit dash-webhook:** `b3d5a22` (push: 2026-04-30 — migration board endpoint)
 
 > Documento vivo — atualize a cada sessão encerrada. Registra o *estado presente* (o que está pronto, em voo, travado).
@@ -18,6 +18,7 @@
 - **v2.7.0 (04/mai):** endpoint `/api/board/weekly` para Cowork + fix detecção reunião closer.
 - **v2.8.0 (06/mai):** redesign completo da aba SDR — funil de 6 etapas (Lead → MQL → Agendamento → Reunião → Qualificação → Closer), DealsModal por etapa, modo Coorte/Evento, banner de alertas.
 - **v2.8.1 (06/mai, mesma sessão):** iterações sobre o redesign — modo calendário p/ "Este mês" (inclui agendamentos futuros), Lead inclui Elopment (paridade com Funil do Mês), tooltips por etapa com STAGE_DEFINITION, fetch dos 6 grupos WW (1, 3, 4, 12, 17, 31) com buffer 90d.
+- **v2.9.0 (06/mai, mesma sessão):** redesign da aba Closer — funil de 3 etapas (Reunião Agendada → Realizada → Contrato), CAC + CPL + Tempo até Fechamento, Cohort de Fechamento substituindo MM4s legacy, motivos de perda preservados. Mesmo padrão visual da SDR.
 - URL de produção: https://weddings-kpi.vercel.app/
 
 ### dash-webhook ✅ (nova realidade compreendida)
@@ -149,7 +150,59 @@ Em ordem cronológica:
 
 ---
 
-## Histórico da sessão atual (2026-05-06)
+## Histórico da sessão atual (2026-05-06, parte 2 — redesign Closer)
+
+Continuação da sessão. Após estabilizar a SDR (parte 1), o usuário pediu redesign
+da aba **Closer** seguindo o mesmo padrão growth-first, focando o final da jornada:
+**Reunião Agendada → Reunião Realizada → Contrato Fechado**. KPIs solicitados:
+contagens das 3 etapas, CAC, taxas Realizada/Contrato e MQL/Contrato, Tempo até
+Fechamento (created_at → data_fechamento). User rejeitou explicitamente Receita/ROAS,
+Performance por Closer, Pipeline em aberto e Sinais de comprometimento — escopo
+enxuto, esses ficam como Phase 2.
+
+Decisões aceitas adicionalmente:
+- **Cohort de Fechamento** substitui o cohort 14-28d/29-45d legacy. Para coorte
+  de leads do mês: % fechou / % em aberto / % perdeu. Comparação com mesmo
+  dia-do-mês da coorte anterior para "Este mês" → leitura de velocidade.
+- **CAC + CPL na mesma aba** (CPL replicado da SDR pra contexto de eficiência
+  do funil completo).
+
+Implementação:
+1. **lib/metrics-closer.ts** (novo) — motor puro análogo a metrics-sdr.ts. Tipos
+   CloserFunnelDetailed, CloserRates, CloserCostBlock, CloserCohort, CloserMissingData.
+   Reusa isInWwLeadsPipeline, isInWwMqlPipeline, realizouCloser. CAC = spend ÷
+   contratos; CPL = spend ÷ leads. Cohort classifica leads em fechou (data_fechamento ≠
+   null), perdeu (status=2 e data_fechamento null), aberto (resto).
+2. **lib/__tests__/metrics-closer.test.ts** (novo) — 17 testes cobrindo funil
+   modo Evento/Coorte, taxas, CAC/CPL, targets prorrateados (incluindo
+   daysElapsedInPeriod), tempo até fechamento, cohort com 3 baldes que somam ao
+   total, lossReasons MQL Lost no período, missingData.
+3. **components/dashboard/CloserTab.tsx** — reescrita completa (~600 linhas).
+   Removidos os 4 KPIs MM4s, BarChart 4-semanas, cohort 14-28/29-45, análise
+   por destino. Componentes locais (FunnelKpiCard, FunnelChevron, CostCard,
+   TimeCard, CohortFechamentoCard, ModeToggle, MissingDataBanner) replicados
+   inline do padrão SDRTab. Direção visual: typography fontWeight 200, padding
+   generoso, hover translateY(-2px), transitions 200ms ease, paleta calma.
+4. **components/Dashboard.tsx** — render do CloserTab passa `deals=sdrAllDeals`,
+   `targets=sdrTarget`, `spend=sdrSpend`. Reusa o estado do SDR (mesmos 6 grupos
+   WW + buffer 90d).
+5. **lib/versions.ts** — bump 2.8.1 → 2.9.0 com 11 changes documentadas.
+6. **scripts/validate-closer-funnel.mjs** — validação contra Supabase em abr/2026
+   e mai/2026.
+
+Validação contra Supabase (06/mai):
+- **Abril/2026 (Mês passado):** Lead=340, MQL=247, R. Agendada=22, R. Realizada=21,
+  Contratos=6, Comparecimento=95.5%, Close rate=28.6%, Conv. MQL→Contrato=2.4%,
+  Tempo=23 dias (n=6). Cohort: 2/340 fecharam, 198/340 perderam, 140/340 abertos.
+- **Maio/2026 (modo calendário):** R. Agendada=6, R. Realizada=5, Contratos=2.
+  Cohort cedo (mês ainda começando): 0/67 fecharam, 63/67 abertos.
+
+`tsc --noEmit` limpo. Vitest **322/327** (5 falhas pré-existentes em
+MonthSelector). `next build` exit 0.
+
+---
+
+## Histórico da sessão (2026-05-06, parte 1 — fixes SDR)
 
 Iterações sobre o redesign SDR v2 entregue mesmo dia (commit `bc55b6b`). Após
 publicação da v2.8.0, o usuário (analista de growth) abriu o dashboard em
@@ -252,14 +305,14 @@ Em ordem cronológica:
 
 ---
 
-## Snapshot de testes (fim da sessão 06/mai)
+## Snapshot de testes (fim da sessão 06/mai — após redesign Closer)
 
-- **kpi-weddings Vitest:** **305/310** verdes (256 anteriores + 27 do `metrics-sdr-v2.test.ts` + 22 doutros). Mantidas as 5 falhas pré-existentes em `MonthSelector.test.tsx` (PR #5 Google Ads, sem relação).
+- **kpi-weddings Vitest:** **322/327** verdes (305 anteriores + 17 novos do `metrics-closer.test.ts`). Mantidas as 5 falhas pré-existentes em `MonthSelector.test.tsx` (PR #5 Google Ads, sem relação).
 - **dash-webhook Vitest:** 72/72 verdes (não houve mudança de código nesta sessão).
-- **Type-check (kpi-weddings):** limpo.
-- **Build local kpi-weddings:** exit 0 (cleanup ~28s + static gen ~2s).
-- **Produção kpi-weddings:** `99ff0eb` em deploy (push 22:21 BRT, deve estar Ready ~1-2min depois). Versão exibida no header: 2.8.1.
+- **Type-check (kpi-weddings):** limpo após cada commit.
+- **Build local kpi-weddings:** exit 0.
+- **Produção kpi-weddings:** versão 2.9.0 em deploy. Versão exibida no header após Vercel processar.
 - **Validação contra Supabase em produção** (06/mai):
-  - Lead em abr/2026 = 340 (225 SDR + 20 Closer + 2 Planej + 1 Internacional + 12 Desqualif + 80 Elopment) ✅ bate com Funil do Mês.
-  - MQL em abr/2026 = 247.
-  - AG. CLOSER em mai/2026 (modo calendário) = 6 (Mariana, Ana, Cristiane, Nathalia, Camila, Tiago).
+  - **SDR — abr/2026:** Lead=340, MQL=247, AG. CLOSER (mai/2026, modo calendário)=6.
+  - **Closer — abr/2026:** R. Agendada=22, R. Realizada=21, Contratos=6, Comparecimento=95.5%, Close rate=28.6%, Conv. MQL→Contrato=2.4%, Tempo até Fechamento=23 dias (n=6). Cohort: 2 fecharam, 140 abertos, 198 perderam.
+  - **Closer — mai/2026 (modo calendário):** R. Agendada=6, R. Realizada=5, Contratos=2. Cohort cedo: 0 fechou, 63 abertos.

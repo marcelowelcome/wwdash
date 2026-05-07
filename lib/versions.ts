@@ -7,6 +7,24 @@ export interface VersionEntry {
 
 export const VERSION_HISTORY: VersionEntry[] = [
     {
+        version: "2.9.0",
+        date: "06/05/2026",
+        description: "Redesign da aba Closer (continuação do funil SDR) — funil de 3 etapas (Reunião Agendada → Reunião Realizada → Contrato), CAC + CPL + Tempo até Fechamento, Cohort de Fechamento substituindo MM4s legacy, motivos de perda preservados. Mesmo padrão visual da SDR (modo calendário, Coorte/Evento, tooltips por etapa).",
+        changes: [
+            "Funil de 3 etapas no hero — cada card mostra valor + meta prorrateada (closer_agendada, closer_realizada, vendas). Click abre DealsModal com lista filtrada. Chevrons entre cards mostram taxa Realizada/Agendada (comparecimento) e Contrato/Realizada (close rate). Linha derivada exibe Conv. MQL→Contrato.",
+            "CAC = (spend Meta + Google) ÷ contratos fechados — sem meta no monthly_targets nesta versão. CPL replicado da SDR (idem), permite ler eficiência do funil completo. Custo por contrato é o KPI mais importante para growth.",
+            "Tempo até Fechamento = média de dias entre created_at do lead e data_fechamento, calculada apenas dos contratos fechados no período (n exibido para janelas curtas). Substitui o tempoMedioFechamento do metrics-contracts com escopo restrito.",
+            "Cohort de Fechamento substitui o cohort 14-28d/29-45d legacy. Para coorte de leads criados no período: ✓ Fecharam (data_fechamento ≠ null), … Em aberto (status ≠ Lost), ✗ Perderam (status = Lost). Barra empilhada + 3 contadores clicáveis. Para 'Este mês' com modo calendário, compara % fechado da coorte atual vs coorte do mês anterior no mesmo dia-do-mês — leitura de velocidade.",
+            "Modo Coorte/Evento espelha SDR/Jornada. Persistido em localStorage('ww-closer-mode'). Modo calendário ('Este mês' estende até endOfMonth) reusa resolvePeriodForSdr — agendamentos e contratos futuros já marcados entram.",
+            "Top motivos de perda preservados em horizontal BarChart (top 8). Conta apenas deals MQL com status='2' (Lost) AND data_fechamento NULL no período. Função aggregateLossReasons exportada de lib/metrics-closer.ts.",
+            "lib/metrics-closer.ts: novo motor puro análogo a metrics-sdr.ts. Tipos: CloserFunnelDetailed, CloserRates, CloserCostBlock, CloserCohort, CloserMissingData. Reusa isInWwLeadsPipeline, isInWwMqlPipeline, realizouCloser. 17 testes cobrem funil/coorte/CAC/CPL/cohort/lossReasons/missingData.",
+            "components/dashboard/CloserTab.tsx: reescrita completa. Removidos os 4 KPIs MM4s, BarChart de janelas 4-semanas, cohort 14-28d/29-45d, análise por destino, breakdown período atual stacked. Componentes locais (FunnelKpiCard, FunnelChevron, CostCard, TimeCard, CohortFechamentoCard, ModeToggle, MissingDataBanner) replicados inline do padrão SDRTab — Phase 2 pode extrair para shared/.",
+            "Banner de alertas no topo da aba (closer_agendada/closer_realizada/vendas sem meta, spend parcial, sync atrasada >6h). MissingDataBanner reusa visual do SDR.",
+            "STAGE_DEFINITION: tooltip nativo (hover) por card do funil com a definição precisa do que conta. Mesmo padrão da SDR — analistas precisam confiar no número.",
+            "Direção visual: ultra-modern, calm, tactile. Hierarquia tipográfica forte (números fontWeight 200), padding generoso, hover com translateY(-2px) + sombra, transitions 200ms ease, paleta calma. Verde/âmbar/vermelho apenas em badges pequenos.",
+        ],
+    },
+    {
         version: "2.8.1",
         date: "06/05/2026",
         description: "Iteração na aba SDR — modo calendário para 'Este mês' (incluindo agendamentos futuros), Lead inclui Elopment (alinhado com Funil do Mês), tooltips por etapa e contagem do funil completa.",

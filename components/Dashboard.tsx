@@ -548,7 +548,15 @@ export default function Dashboard() {
                     />
                 )}
                 {tab === "funnel" && <FunnelTab m={metrics} />}
-                {tab === "closer" && <CloserTab m={metrics} />}
+                {tab === "closer" && (
+                    <CloserTab
+                        deals={sdrAllDeals}
+                        fieldMap={acFieldMap}
+                        period={periodSelection}
+                        targets={sdrTarget}
+                        spend={sdrSpend}
+                    />
+                )}
                 {tab === "pipeline" && <PipelineTab m={metrics} />}
                 {tab === "contratos" && <ContratosTab deals={wonDeals} fieldMap={acFieldMap} />}
                 {tab === "perfil-score" && <PerfilScoreTab wonDeals={wonDeals} closerDeals={closerDeals} sdrDeals={sdrDeals} fieldMap={acFieldMap} />}
