@@ -1,12 +1,27 @@
 # Briefing Técnico — Endpoint `/api/board/weekly`
 
-**Versão:** 1.2
-**Data:** 30 abril 2026
+**Versão:** 1.3
+**Data:** 07 maio 2026
 **Autor:** Marcelo (Marketing) + revisão técnica + revisão Lead Tech
 **Implementador:** Mateus (Dev)
 **Consumidor:** Claude Cowork (geração de Board Executivo semanal)
 
 > Este documento é a fonte de verdade do contrato. Mudanças no comportamento do endpoint exigem bump de versão (v1.2 → v1.3 para ajustes; v2.0 para breaking changes em definição de KPI).
+
+**Mudanças desde v1.2 (correção de subestimação histórica + alinhamento com convenção do dashboard):**
+
+- **C1 (P0 — fix de produção):** `contratos_vol` agora usa a **regra canônica `isClosedWwContract`** (lib/funnel-utils.ts:isClosedWwContract no dashboard). 3 sinais cumulativos: `data_fechamento` preenchida + pipeline em whitelist (11 pipelines: 6 aquisição + 5 pós-venda WW) + sinal de funil (`data_qualificado` OR `data_closer`). Antes contava apenas em `LEADS_PIPELINES` (5 sem Elopment, sem pós-venda) — subestimava ~67% historicamente. **Validação Supabase (19 meses):** mai/2025 tinha 13 contratos fechados (12 WW + 1 Trips), endpoint reportava 4.
+- **C2:** `LEADS_PIPELINES` ganha `Elopment Wedding` (6 pipelines). Lead = aquisição bruta, inclui linha de produto Elopment. Alinhado com convenção do dashboard (`isInWwLeadsPipeline`).
+- **C3:** Novas constantes `WW_MQL_PIPELINES` (3), `WW_POST_SALES_PIPELINES` (5), `WW_CONTRACT_PIPELINES` (11) em `lib/board/constants.ts`.
+- **C4:** `qualificados_sdr` e `reunioes_closer` agora usam **MQL pipelines + pós-venda com sinal de funil** (espelho de `isWwMqlHistoric` no dashboard). Antes filtravam por `LEADS_PIPELINES` (5) — inflavam contagem com Internacional + Desqualificados (não-MQL). Agora alinhados com a aba Funil do Mês.
+- **C5:** Filtro `title NOT ILIKE 'EW%'` removido (decisão Marketing 06/05/2026 — leads bonafide podem usar esse prefixo).
+- **C6:** `fetchBoardDeals` (lib/board/deals-fetcher.ts) agora busca os 11 pipelines WW (`WW_CONTRACT_PIPELINES`). Antes buscava apenas 5 — deals em pós-venda não chegavam ao motor mesmo se a regra os aceitasse.
+- **C7 (drift detection):** `kpi_definitions_hash` muda automaticamente (recalculado em build sobre `WW_DEFINITIONS`). **Cowork deve refazer baseline após o deploy.**
+
+> **Ação requerida do Cowork antes do cut-over:**
+> 1. Antes do deploy: refazer baseline com 1 chamada de validação a `/api/board/weekly` em sandbox/dev.
+> 2. Validar contra dashboard (aba Board Mensal ou Funil do Mês) — mai/2025 deve dar 12 contratos (não 4).
+> 3. Após deploy em produção: aceitar o novo `kpi_definitions_hash` como baseline.
 
 **Mudanças desde v1.1 (todos os P0/P1/P2 do review Lead Tech):**
 - **G1:** Adicionado `funnel.targets` no envelope (cruza `monthly_targets` automaticamente).

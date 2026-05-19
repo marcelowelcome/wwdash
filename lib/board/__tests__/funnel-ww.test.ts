@@ -24,26 +24,30 @@ function deal(overrides: Partial<BoardDeal>): BoardDeal {
     };
 }
 
-describe("computeFunnelWw — base filters", () => {
-    it("excludes elopement deals", () => {
+describe("computeFunnelWw — Lead filter (briefing v1.3)", () => {
+    it("inclui Elopment como Lead (aquisição bruta), exclui de MQL/Qualif/Reun", () => {
+        // Decisão 06/05/2026: Elopment é linha de produto WW e conta como Lead
+        // bruto, mas não infla MQL nem etapas pós-MQL.
         const deals: BoardDeal[] = [
-            deal({ id: "1", is_elopement: true, created_at: "2026-04-22T15:00:00.000Z" }),
-            deal({ id: "2", is_elopement: false, created_at: "2026-04-22T15:00:00.000Z" }),
+            deal({ id: "1", pipeline: "Elopment Wedding", is_elopement: true, created_at: "2026-04-22T15:00:00.000Z", data_qualificado: "2026-04-23T15:00:00.000Z" }),
+            deal({ id: "2", pipeline: "SDR Weddings", is_elopement: false, created_at: "2026-04-22T15:00:00.000Z", data_qualificado: "2026-04-23T15:00:00.000Z" }),
         ];
         const r = computeFunnelWw({ deals, range, isComplete: true });
-        expect(r.leads_gerados).toBe(1);
+        expect(r.leads_gerados).toBe(2); // Elopment + WW
+        expect(r.qualificados_sdr).toBe(1); // só WW; Elopment não é MQL
     });
 
-    it("excludes title starting with 'EW'", () => {
+    it("inclui leads com prefixo 'EW' no título (decisão Marketing 06/05/2026)", () => {
+        // Antes excluía via title NOT ILIKE 'EW%'. Agora bonafide podem usar esse prefixo.
         const deals: BoardDeal[] = [
-            deal({ id: "1", title: "EW - Couple", created_at: "2026-04-22T15:00:00.000Z" }),
-            deal({ id: "2", title: "DW - Couple", created_at: "2026-04-22T15:00:00.000Z" }),
+            deal({ id: "1", title: "EW - Couple", pipeline: "SDR Weddings", created_at: "2026-04-22T15:00:00.000Z" }),
+            deal({ id: "2", title: "DW - Couple", pipeline: "SDR Weddings", created_at: "2026-04-22T15:00:00.000Z" }),
         ];
         const r = computeFunnelWw({ deals, range, isComplete: true });
-        expect(r.leads_gerados).toBe(1);
+        expect(r.leads_gerados).toBe(2);
     });
 
-    it("excludes pipelines outside LEADS_PIPELINES", () => {
+    it("exclui pipelines fora de WW (Trips e outros)", () => {
         const deals: BoardDeal[] = [
             deal({ id: "1", pipeline: "SDR - Trips", created_at: "2026-04-22T15:00:00.000Z" }),
             deal({ id: "2", pipeline: "Closer Weddings", created_at: "2026-04-22T15:00:00.000Z" }),
@@ -90,12 +94,51 @@ describe("computeFunnelWw — KPI counters", () => {
         expect(computeFunnelWw({ deals, range, isComplete: true }).reunioes_closer).toBe(3);
     });
 
-    it("counts contratos_vol by data_fechamento", () => {
+    it("counts contratos_vol pela regra canônica (pipeline whitelist + sinal de funil)", () => {
         const deals: BoardDeal[] = [
-            deal({ id: "1", data_fechamento: "2026-04-23T10:00:00.000Z" }),
-            deal({ id: "2", data_fechamento: null }),
+            // OK — aquisição + sinal de funil
+            deal({ id: "1", pipeline: "Closer Weddings", data_qualificado: "2026-04-20T10:00:00.000Z", data_fechamento: "2026-04-23T10:00:00.000Z" }),
+            // Sem data_fechamento
+            deal({ id: "2", pipeline: "Closer Weddings", data_qualificado: "2026-04-20T10:00:00.000Z", data_fechamento: null }),
+            // SEM sinal de funil — rejeitado
+            deal({ id: "3", pipeline: "Closer Weddings", data_fechamento: "2026-04-23T10:00:00.000Z" }),
         ];
         expect(computeFunnelWw({ deals, range, isComplete: true }).contratos_vol).toBe(1);
+    });
+
+    it("conta contratos em pipelines de pós-venda WW (Convidados, Gestão, Produção)", () => {
+        // Fix de 2026-05-07: deals migram para pós-venda APÓS data_fechamento.
+        // Antes (v1.2) eram perdidos pelo filtro só de LEADS_PIPELINES (5).
+        const deals: BoardDeal[] = [
+            deal({ id: "1", pipeline: "Convidados", data_qualificado: "2026-04-15T10:00:00.000Z", data_fechamento: "2026-04-23T10:00:00.000Z" }),
+            deal({ id: "2", pipeline: "Convidados - Michelly", data_closer: "2026-04-18T10:00:00.000Z", data_fechamento: "2026-04-24T10:00:00.000Z" }),
+            deal({ id: "3", pipeline: "Produção", data_qualificado: "2026-04-12T10:00:00.000Z", data_fechamento: "2026-04-25T10:00:00.000Z" }),
+            deal({ id: "4", pipeline: "WW - Gestão Convidados", data_qualificado: "2026-04-14T10:00:00.000Z", data_fechamento: "2026-04-26T10:00:00.000Z" }),
+            // Sem sinal de funil — rejeitado (deal criado direto sem origem no funil)
+            deal({ id: "5", pipeline: "Convidados", data_fechamento: "2026-04-23T10:00:00.000Z" }),
+            // Trips — fora da whitelist
+            deal({ id: "6", pipeline: "Consultoras TRIPS", data_qualificado: "2026-04-15T10:00:00.000Z", data_fechamento: "2026-04-23T10:00:00.000Z" }),
+        ];
+        expect(computeFunnelWw({ deals, range, isComplete: true }).contratos_vol).toBe(4);
+    });
+
+    it("conta qualif/reun em pipelines de pós-venda WW (MQL histórico)", () => {
+        // MQL "histórico": deal já migrou pra pós-venda mas teve qualif/reun no
+        // período. Antes (v1.2) era perdido pelo filtro só de LEADS_PIPELINES.
+        // Nota: o filtro `isWwMql` em pipelines pós-venda exige `hasFunnelSignal`,
+        // mas para qualif/reun esse sinal é o próprio data_qualificado/data_closer,
+        // então a condição é satisfeita automaticamente.
+        const deals: BoardDeal[] = [
+            deal({ id: "1", pipeline: "Convidados", data_qualificado: "2026-04-22T10:00:00.000Z" }),
+            deal({ id: "2", pipeline: "Convidados - Michelly", data_closer: "2026-04-23T10:00:00.000Z", tipo_da_reuni_o_com_a_closer: "Online" }),
+            // Pipeline pós-venda + Elopment é true → rejeitado (sempre exclui Elopment)
+            deal({ id: "3", pipeline: "Convidados", is_elopement: true, data_qualificado: "2026-04-22T11:00:00.000Z" }),
+            // Pipeline Trips — rejeitado
+            deal({ id: "4", pipeline: "Consultoras TRIPS", data_qualificado: "2026-04-22T12:00:00.000Z" }),
+        ];
+        const r = computeFunnelWw({ deals, range, isComplete: true });
+        expect(r.qualificados_sdr).toBe(1); // só id 1
+        expect(r.reunioes_closer).toBe(1); // só id 2
     });
 });
 
@@ -157,10 +200,11 @@ describe("computeRollingWw", () => {
     it("returns the subset shape", () => {
         const deals: BoardDeal[] = [
             deal({ id: "1", data_qualificado: "2026-04-22T10:00Z" }),
-            deal({ id: "2", data_fechamento: "2026-04-23T10:00Z" }),
+            // Contrato precisa de sinal de funil — adiciono data_qualificado.
+            deal({ id: "2", data_qualificado: "2026-04-20T10:00Z", data_fechamento: "2026-04-23T10:00Z" }),
         ];
         const r = computeRollingWw({ deals, range, isComplete: false });
-        expect(r).toEqual({ qualificados_sdr: 1, contratos_vol: 1, is_complete: false });
+        expect(r).toEqual({ qualificados_sdr: 2, contratos_vol: 1, is_complete: false });
     });
 });
 

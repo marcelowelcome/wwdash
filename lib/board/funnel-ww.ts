@@ -1,18 +1,63 @@
 // Board endpoint — Welcome Weddings (WW) pure funnel calculator
-// See: docs/board-api-briefing.md (v1.2) section 4.1
+// See: docs/board-api-briefing.md (v1.3) section 4.1
 //
 // All inputs are pre-fetched BoardDeal[] (already brand-filtered if desired).
 // Output is the FunnelWW shape — no I/O, no global state.
+//
+// **Refatorado 2026-05-07** para alinhar com convenção canônica do dashboard
+// (lib/funnel-utils.ts). Antes filtrava todas as etapas por LEADS_PIPELINES
+// (5 pipelines sem Elopment, sem pós-venda) — subestimava contratos em ~67%
+// historicamente e divergia da aba Funil do Mês para Lead/MQL.
+// Ver memória `project_ww_contract_definition.md`.
 
-import { LEADS_PIPELINES, REUNIAO_EXCLUDE } from "./constants";
+import { LEADS_PIPELINES, WW_MQL_PIPELINES, WW_POST_SALES_PIPELINES, WW_CONTRACT_PIPELINES, REUNIAO_EXCLUDE } from "./constants";
 import type { BoardDeal, FunnelWW, NullFunnelWW, RollingWW, UtcRange } from "./types";
 
 // ─── Filter primitives (pure) ───────────────────────────────────────────────
-function isWwBaseQualified(d: BoardDeal): boolean {
+
+/** True se o deal tem sinal de ter passado pelo funil (data_qualificado OR data_closer). */
+function hasFunnelSignal(d: BoardDeal): boolean {
+    return (d.data_qualificado !== null && d.data_qualificado !== "") ||
+        (d.data_closer !== null && d.data_closer !== "");
+}
+
+/**
+ * Lead WW: 6 pipelines de aquisição (inclui Elopment) + pós-venda WW com
+ * sinal de funil. Não exclui mais títulos com prefixo `EW` (decisão
+ * Marketing 06/05/2026 — leads bonafide podem usar esse prefixo).
+ */
+function isWwLead(d: BoardDeal): boolean {
+    if (!d.pipeline) return false;
+    if (LEADS_PIPELINES.includes(d.pipeline)) return true;
+    return WW_POST_SALES_PIPELINES.includes(d.pipeline) && hasFunnelSignal(d);
+}
+
+/**
+ * MQL WW: 3 pipelines do funil de venda principal + pós-venda WW com sinal
+ * de funil. Sempre exclui Elopment (linha de produto separada). Usado para
+ * Qualif SDR e Reunião Closer.
+ */
+function isWwMql(d: BoardDeal): boolean {
     if (d.is_elopement === true) return false;
-    if (d.title && /^EW/i.test(d.title)) return false;
-    if (!d.pipeline || !LEADS_PIPELINES.includes(d.pipeline)) return false;
-    return true;
+    if (!d.pipeline) return false;
+    if (WW_MQL_PIPELINES.includes(d.pipeline)) return true;
+    return WW_POST_SALES_PIPELINES.includes(d.pipeline) && hasFunnelSignal(d);
+}
+
+/**
+ * Contrato WW fechado — regra canônica (3 sinais cumulativos):
+ *   1. data_fechamento preenchida
+ *   2. pipeline ∈ WW_CONTRACT_PIPELINES (11: aquisição + pós-venda)
+ *   3. sinal de funil (data_qualificado OR data_closer)
+ *
+ * Antes o filtro era apenas `pipeline ∈ LEADS_PIPELINES (5 sem Elopment)` —
+ * perdia deals que migraram para pós-venda após fechar. Subestimação ~67%
+ * historicamente. Espelha lib/funnel-utils.ts:isClosedWwContract no dashboard.
+ */
+function isWwClosedContract(d: BoardDeal): boolean {
+    if (!d.data_fechamento) return false;
+    if (!d.pipeline || !WW_CONTRACT_PIPELINES.includes(d.pipeline)) return false;
+    return hasFunnelSignal(d);
 }
 
 function inRange(iso: string | null, range: UtcRange): boolean {
@@ -56,12 +101,18 @@ export function computeFunnelWw(input: ComputeWwInput): FunnelWW {
     let contratos_vol = 0;
 
     for (const d of deals) {
-        if (!isWwBaseQualified(d)) continue;
+        // Cada KPI usa o filtro próprio (Lead = 6 + pós-venda, MQL = 3 + pós-venda,
+        // Contrato = 11 + sinal de funil). Não há mais base único — ver helpers
+        // isWwLead / isWwMql / isWwClosedContract acima.
 
-        if (inRange(d.created_at, range)) leads_gerados++;
-        if (inRange(d.data_qualificado, range)) qualificados_sdr++;
-        if (inRange(d.data_closer, range) && reuniaoCounts(d)) reunioes_closer++;
-        if (inRange(d.data_fechamento, range)) contratos_vol++;
+        if (isWwLead(d) && inRange(d.created_at, range)) leads_gerados++;
+
+        if (isWwMql(d)) {
+            if (inRange(d.data_qualificado, range)) qualificados_sdr++;
+            if (inRange(d.data_closer, range) && reuniaoCounts(d)) reunioes_closer++;
+        }
+
+        if (isWwClosedContract(d) && inRange(d.data_fechamento, range)) contratos_vol++;
     }
 
     const conversao =
@@ -133,4 +184,4 @@ export function averageWwWeeks(weeks: Array<FunnelWW | null>): FunnelWW | NullFu
     };
 }
 
-export const __testing = { isWwBaseQualified, inRange, reuniaoCounts };
+export const __testing = { isWwLead, isWwMql, isWwClosedContract, hasFunnelSignal, inRange, reuniaoCounts };

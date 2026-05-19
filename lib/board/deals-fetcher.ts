@@ -8,7 +8,7 @@
 
 import { getSupabaseAdmin } from "./supabase-admin";
 import type { BoardDeal, Brand, UtcRange } from "./types";
-import { LEADS_PIPELINES, TRIPS_PIPELINES } from "./constants";
+import { WW_CONTRACT_PIPELINES, TRIPS_PIPELINES } from "./constants";
 
 const SELECTED_COLUMNS = [
     "id",
@@ -64,7 +64,10 @@ function rowToBoardDeal(r: RawRow): BoardDeal {
 // Filter further by brand pipelines.
 export async function fetchBoardDeals(brand: Brand, span: UtcRange): Promise<BoardDeal[]> {
     const supabase = getSupabaseAdmin();
-    const pipelines = brand === "ww" ? LEADS_PIPELINES : TRIPS_PIPELINES;
+    // WW fetcha os 11 pipelines (6 aquisição + 5 pós-venda) para capturar
+    // contratos que migraram após data_fechamento. Antes (briefing v1.2)
+    // fetchava só LEADS_PIPELINES (5) — perdia ~67% dos contratos historicamente.
+    const pipelines = brand === "ww" ? WW_CONTRACT_PIPELINES : TRIPS_PIPELINES;
 
     const start = span.startUtc.toISOString();
     const end = span.endUtc.toISOString();
