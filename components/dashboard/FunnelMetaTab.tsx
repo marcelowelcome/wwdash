@@ -29,6 +29,7 @@ import {
     isInWwPipeline,
     isInWwLeadsPipeline,
     isInWwMqlPipeline,
+    isClosedWwContract,
 } from "@/lib/funnel-utils";
 
 interface FunnelMetaTabProps {
@@ -72,8 +73,12 @@ function calculateMetricsFromDeals(deals: WonDeal[], year: number, month: number
                 isInMonth(d.data_horario_agendamento_closer, year, month) &&
                 realizouCloser(d)
         ).length,
-        // Venda: use provided vendasCount if available, otherwise count all deals with data_fechamento (except Elopement)
-        vendas: vendasCount ?? deals.filter((d) => !isElopement(d) && isInMonth(d.data_fechamento, year, month)).length,
+        // Venda: regra canônica (isClosedWwContract) — pipeline WW válido
+        // (incluindo pós-venda Convidados/Gestão/Produção) + sinal de funil
+        // (data_qualificado OR data_closer). Decisão 2026-05-06 após descobrir
+        // que filtro só por MQL pipeline subestimava contratos em ~67%
+        // historicamente. Ver lib/funnel-utils.ts:isClosedWwContract.
+        vendas: vendasCount ?? deals.filter((d) => isClosedWwContract(d) && isInMonth(d.data_fechamento, year, month)).length,
     };
 }
 

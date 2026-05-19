@@ -34,12 +34,19 @@ export function periodToDaysBack(period: GlobalPeriod): number {
 export const TRAINING_MOTIVE = "Para closer ter mais reuniões";
 
 // Fallback: map group_id → pipeline name for deals missing group_id
+// Inclui os 5 pós-venda WW (Convidados, Convidados - Michelly, Produção,
+// WW - Gestão Convidados) necessários para isClosedWwContract pegar
+// contratos que migraram após data_fechamento. Ver project_ww_contract_definition.
 const GROUP_TO_PIPELINE: Record<string, string> = {
     "1": "SDR Weddings",
     "3": "Closer Weddings",
     "4": "Planejamento Weddings",
+    "5": "Convidados",
+    "10": "Convidados - Michelly",
     "12": "Elopment Wedding",
     "17": "WW - Internacional",
+    "19": "WW - Gestão Convidados",
+    "22": "Produção",
     "31": "Outros Desqualificados | Wedding",
 };
 

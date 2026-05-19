@@ -24,6 +24,8 @@ import { ContratosTab } from "./dashboard/ContratosTab";
 import { PerfilScoreTab } from "./dashboard/PerfilScoreTab";
 import { FunnelMetaTab } from "./dashboard/FunnelMetaTab";
 import { JornadaTab } from "./dashboard/JornadaTab";
+import { BoardMonthlyTab } from "./dashboard/BoardMonthlyTab";
+import { lastNMonthsPlusCurrent } from "@/lib/metrics-board-monthly";
 import { ChatTab } from "./dashboard/ChatTab";
 import { ChatPopup } from "./dashboard/ChatPopup";
 import { ChangelogModal } from "./dashboard/ChangelogModal";
@@ -43,7 +45,7 @@ function deduplicateDeals(deals: WonDeal[]): WonDeal[] {
     });
 }
 
-type TabId = "overview" | "jornada" | "funnel" | "sdr" | "closer" | "pipeline" | "contratos" | "perfil-score" | "dictionary" | "funnel-metas" | "chat";
+type TabId = "overview" | "jornada" | "funnel" | "sdr" | "closer" | "pipeline" | "contratos" | "perfil-score" | "dictionary" | "funnel-metas" | "board-monthly" | "chat";
 
 const TABS: { id: TabId; label: string }[] = [
     { id: "overview", label: "Visão Geral" },
@@ -51,6 +53,7 @@ const TABS: { id: TabId; label: string }[] = [
     { id: "funnel-metas", label: "Funil" },
     { id: "sdr", label: "SDR" },
     { id: "closer", label: "Closer" },
+    { id: "board-monthly", label: "Board Mensal" },
     { id: "pipeline", label: "Pipeline" },
     { id: "contratos", label: "Contratos" },
     { id: "perfil-score", label: "Perfil & Score" },
@@ -63,7 +66,7 @@ const TABS: { id: TabId; label: string }[] = [
  * etc.) e portanto NÃO mostram o seletor "Janela" global. Adicionar aqui
  * conforme abas evoluírem para terem seu próprio controle.
  */
-const TABS_WITH_LOCAL_PERIOD = new Set<TabId>(["funnel-metas"]);
+const TABS_WITH_LOCAL_PERIOD = new Set<TabId>(["funnel-metas", "board-monthly"]);
 
 // ─── HEADER ───────────────────────────────────────────────────────────────────
 interface SyncLog {
@@ -233,6 +236,11 @@ export default function Dashboard() {
     // preset = "Este mês"). Sem o buffer, deals criados antes do período mas com
     // data_closer/data_reuniao_1 no período somem das contagens.
     const [sdrAllDeals, setSdrAllDeals] = useState<WonDeal[]>([]);
+    // Board mensal: deals dos últimos 7 meses (6 + atual), targets e spend por mês ("YYYY-MM").
+    // Fetch independente do periodSelection — sempre olha os mesmos 7 meses calendário.
+    const [boardMonthlyDeals, setBoardMonthlyDeals] = useState<WonDeal[]>([]);
+    const [boardTargetsByMonth, setBoardTargetsByMonth] = useState<Map<string, MonthlyTarget | null>>(new Map());
+    const [boardSpendByMonth, setBoardSpendByMonth] = useState<Map<string, { meta: number; google: number; partial: boolean }>>(new Map());
     const chat = useChat();
 
     // Global period filter (persisted in localStorage; migra do schema antigo)
@@ -405,6 +413,73 @@ export default function Dashboard() {
         };
     }, [periodSelection]);
 
+    // Board mensal — fetch de deals (12 meses + atual = 13) + targets + spend agregado.
+    // Independente do `periodSelection` global. Fetch dimensionado para o maior
+    // preset (12 meses); UI filtra localmente quando o usuário escolhe janela menor.
+    // Buffer de 90d pra trás pega deals criados antes do mês exibido mas com
+    // data_fechamento/data_closer no período (caso comum em contratos).
+    useEffect(() => {
+        const months = lastNMonthsPlusCurrent(12);
+        const firstMonthStart = new Date(Date.UTC(months[0].year, months[0].month - 1, 1, 0, 0, 0));
+        const fetchStart = new Date(firstMonthStart.getTime() - 90 * 24 * 60 * 60 * 1000);
+        const lastMonth = months[months.length - 1];
+        const lastDay = new Date(Date.UTC(lastMonth.year, lastMonth.month, 0)).getUTCDate();
+        const fetchEnd = new Date(Date.UTC(lastMonth.year, lastMonth.month - 1, lastDay, 23, 59, 59));
+        const fetchRange = { start: fetchStart, end: fetchEnd };
+
+        let cancelled = false;
+        Promise.allSettled([
+            // Deals: 10 grupos WW na janela. Inclui pós-venda (5, 10, 19, 22)
+            // pra capturar contratos que migraram após data_fechamento — sem
+            // esses, isClosedWwContract não pega ~8 contratos por mês.
+            Promise.allSettled([
+                fetchAllDealsFromDb("1", fetchRange),
+                fetchAllDealsFromDb("3", fetchRange),
+                fetchAllDealsFromDb("4", fetchRange),
+                fetchAllDealsFromDb("5", fetchRange),
+                fetchAllDealsFromDb("10", fetchRange),
+                fetchAllDealsFromDb("12", fetchRange),
+                fetchAllDealsFromDb("17", fetchRange),
+                fetchAllDealsFromDb("19", fetchRange),
+                fetchAllDealsFromDb("22", fetchRange),
+                fetchAllDealsFromDb("31", fetchRange),
+            ]).then(results => results.flatMap(r => r.status === "fulfilled" ? r.value : [])),
+            // Targets por mês
+            Promise.all(months.map(m => fetchMonthlyTarget(m.year, m.month, "wedding"))),
+            // Spend por mês
+            Promise.all(months.map(m => {
+                const start = new Date(Date.UTC(m.year, m.month - 1, 1, 0, 0, 0));
+                const days = new Date(Date.UTC(m.year, m.month, 0)).getUTCDate();
+                const end = new Date(Date.UTC(m.year, m.month - 1, days, 23, 59, 59));
+                return fetchAdsSpendByRange(start, end);
+            })),
+        ]).then(([dealsRes, targetsRes, spendRes]) => {
+            if (cancelled) return;
+            if (dealsRes.status === "fulfilled") {
+                setBoardMonthlyDeals(deduplicateDeals(dealsRes.value));
+            }
+            const targetsMap = new Map<string, MonthlyTarget | null>();
+            const spendMap = new Map<string, { meta: number; google: number; partial: boolean }>();
+            if (targetsRes.status === "fulfilled") {
+                targetsRes.value.forEach((t, idx) => {
+                    const key = `${months[idx].year}-${String(months[idx].month).padStart(2, "0")}`;
+                    targetsMap.set(key, t);
+                });
+            }
+            if (spendRes.status === "fulfilled") {
+                spendRes.value.forEach((s, idx) => {
+                    const key = `${months[idx].year}-${String(months[idx].month).padStart(2, "0")}`;
+                    spendMap.set(key, s ?? { meta: 0, google: 0, partial: true });
+                });
+            }
+            setBoardTargetsByMonth(targetsMap);
+            setBoardSpendByMonth(spendMap);
+        });
+        return () => {
+            cancelled = true;
+        };
+    }, []);
+
     const handleSync = useCallback(async () => {
         setSyncing(true);
         setSyncResult(null);
@@ -555,6 +630,13 @@ export default function Dashboard() {
                         period={periodSelection}
                         targets={sdrTarget}
                         spend={sdrSpend}
+                    />
+                )}
+                {tab === "board-monthly" && (
+                    <BoardMonthlyTab
+                        deals={boardMonthlyDeals}
+                        targetsByMonth={boardTargetsByMonth}
+                        spendByMonth={boardSpendByMonth}
                     />
                 )}
                 {tab === "pipeline" && <PipelineTab m={metrics} />}

@@ -41,7 +41,7 @@
  */
 
 import type { Deal, MonthlyTarget, WonDeal } from "./schemas";
-import { isInWwLeadsPipeline, isInWwMqlPipeline } from "./funnel-utils";
+import { isWwLeadHistoric, isWwMqlHistoric, isClosedWwContract } from "./funnel-utils";
 import { realizouCloser } from "./closer-utils";
 
 // ─── TYPES ──────────────────────────────────────────────────────────────────
@@ -170,13 +170,24 @@ function dateInRange(value: string | null | undefined, start: Date, end: Date): 
     return t >= start.getTime() && t <= end.getTime();
 }
 
+/**
+ * Lead histórico: 6 pipelines de aquisição WW + pós-venda WW com sinal de
+ * funil. Decisão (2026-05-06): incluir pós-venda evita subestimação retroativa
+ * de Leads — após fechar, deals migram para Convidados/Gestão/Produção. Ver
+ * funnel-utils.ts:isWwLeadHistoric.
+ */
 function isInLeadScope(d: WonDeal): boolean {
-    return isInWwLeadsPipeline(d);
+    return isWwLeadHistoric(d);
 }
 
+/**
+ * MQL histórico: 3 pipelines MQL + pós-venda WW com sinal de funil. Sem
+ * Elopment. Ver funnel-utils.ts:isWwMqlHistoric.
+ */
 function isInMqlScope(d: WonDeal): boolean {
-    return isInWwMqlPipeline(d);
+    return isWwMqlHistoric(d);
 }
+
 
 /** Agrega motivos de perda para os deals perdidos no período. Top N. */
 export function aggregateLossReasons(
@@ -261,8 +272,9 @@ function computeStageCounts(
                     acc.realizada.deals.push(d);
                 }
             }
-            // Contrato: data_fechamento no período.
-            if (dateInRange(d.data_fechamento, range.start, range.end)) {
+            // Contrato: regra canônica (isClosedWwContract) + data_fechamento no período.
+            // Inclui deals em pipelines de pós-venda WW.
+            if (isClosedWwContract(d) && dateInRange(d.data_fechamento, range.start, range.end)) {
                 acc.contrato.count++;
                 acc.contrato.deals.push(d);
             }
@@ -277,7 +289,7 @@ function computeStageCounts(
                     acc.realizada.deals.push(d);
                 }
             }
-            if (d.data_fechamento) {
+            if (isClosedWwContract(d)) {
                 acc.contrato.count++;
                 acc.contrato.deals.push(d);
             }
@@ -306,7 +318,9 @@ function computeCohortFechamento(
     const perdeu: WonDeal[] = [];
     const aberto: WonDeal[] = [];
     for (const d of inCohort) {
-        if (d.data_fechamento) {
+        // Contrato fechado: regra canônica (isClosedWwContract). Garante que o
+        // deal está em pipeline WW válido e passou pelo funil.
+        if (isClosedWwContract(d)) {
             fechou.push(d);
         } else if (d.status === "2") {
             perdeu.push(d);
@@ -341,8 +355,8 @@ function computeCohortFechamento(
             const createdAtIso = d.created_at ?? d.cdate ?? null;
             if (!dateInRange(createdAtIso, prevStart, prevEnd)) continue;
             prevTotal++;
-            if (d.data_fechamento) {
-                const fechT = new Date(d.data_fechamento).getTime();
+            if (isClosedWwContract(d)) {
+                const fechT = new Date(d.data_fechamento!).getTime();
                 if (!Number.isNaN(fechT) && fechT <= prevSameDayCutoff.getTime()) {
                     prevFechouUntilSameDay++;
                 }

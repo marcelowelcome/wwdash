@@ -97,19 +97,41 @@ describe("computeCloserMetrics — funil modo Evento", () => {
         expect(m.funnelDetailed.realizada.current).toBe(2);
     });
 
-    it("Contrato conta deals com data_fechamento no período", () => {
+    it("Contrato conta deals com data_fechamento no período (regra canônica isClosedWwContract)", () => {
+        // Regra: data_fechamento ∈ período + pipeline WW válido + sinal de funil
+        // (data_qualificado OR data_horario_agendamento_closer).
         const deals = [
-            deal({ id: "1", pipeline: "Closer Weddings", data_fechamento: "2026-04-25T15:00:00Z" }),
-            deal({ id: "2", pipeline: "SDR Weddings", data_fechamento: "2026-04-29T15:00:00Z" }),
+            // OK — Closer Weddings + data_qualificado preenchida
+            deal({ id: "1", pipeline: "Closer Weddings", data_qualificado: "2026-04-20T15:00:00Z", data_fechamento: "2026-04-25T15:00:00Z" }),
+            // OK — SDR Weddings + data_closer preenchida
+            deal({ id: "2", pipeline: "SDR Weddings", data_horario_agendamento_closer: "2026-04-25T15:00:00Z", data_fechamento: "2026-04-29T15:00:00Z" }),
             // Fora do período
-            deal({ id: "3", pipeline: "Closer Weddings", data_fechamento: "2026-05-01T15:00:00Z" }),
+            deal({ id: "3", pipeline: "Closer Weddings", data_qualificado: "2026-04-01T15:00:00Z", data_fechamento: "2026-05-01T15:00:00Z" }),
             // Sem data_fechamento
-            deal({ id: "4", pipeline: "Closer Weddings", data_fechamento: null }),
-            // Não-MQL
-            deal({ id: "5", pipeline: "WW - Internacional", data_fechamento: "2026-04-25T15:00:00Z" }),
+            deal({ id: "4", pipeline: "Closer Weddings", data_qualificado: "2026-04-20T15:00:00Z", data_fechamento: null }),
+            // Internacional (não é MQL/post-sales) — rejeitado pela whitelist
+            deal({ id: "5", pipeline: "WW - Internacional", data_qualificado: "2026-04-20T15:00:00Z", data_fechamento: "2026-04-25T15:00:00Z" }),
+            // SEM sinal de funil → rejeitado (deal criado direto sem passar pelo SDR)
+            deal({ id: "6", pipeline: "Closer Weddings", data_fechamento: "2026-04-25T15:00:00Z" }),
         ];
         const m = computeCloserMetrics(deals, fieldMap(), period);
-        expect(m.funnelDetailed.contrato.current).toBe(2);
+        expect(m.funnelDetailed.contrato.current).toBe(2); // ids 1 e 2
+    });
+
+    it("Contrato em pipeline pós-venda WW conta (Convidados, Gestão, Produção)", () => {
+        // Regra de 2026-05-06: deal que passou pelo funil e fechou é movido
+        // para pós-venda. Pipeline atual = pós-venda + sinal de funil = contrato.
+        const deals = [
+            deal({ id: "1", pipeline: "Convidados", data_qualificado: "2026-04-10T15:00:00Z", data_fechamento: "2026-04-25T15:00:00Z" }),
+            deal({ id: "2", pipeline: "Convidados - Michelly", data_horario_agendamento_closer: "2026-04-15T15:00:00Z", data_fechamento: "2026-04-26T15:00:00Z" }),
+            deal({ id: "3", pipeline: "Produção", data_qualificado: "2026-04-12T15:00:00Z", data_fechamento: "2026-04-28T15:00:00Z" }),
+            // Sem sinal de funil — rejeitado (deal criado direto em Convidados)
+            deal({ id: "4", pipeline: "Convidados", data_fechamento: "2026-04-25T15:00:00Z" }),
+            // Trips — fora da whitelist
+            deal({ id: "5", pipeline: "Consultoras TRIPS", data_qualificado: "2026-04-10T15:00:00Z", data_fechamento: "2026-04-25T15:00:00Z" }),
+        ];
+        const m = computeCloserMetrics(deals, fieldMap(), period);
+        expect(m.funnelDetailed.contrato.current).toBe(3); // ids 1, 2, 3
     });
 });
 
@@ -117,13 +139,14 @@ describe("computeCloserMetrics — funil modo Evento", () => {
 
 describe("computeCloserMetrics — modo Coorte", () => {
     it("Coorte: contrato conta deals criados no período que JÁ fecharam (mesmo após end)", () => {
+        // Fixtures com sinal de funil (data_qualificado) — regra canônica.
         const deals = [
             // Criado em abril, fechou em abril → conta em ambos os modos
-            deal({ id: "1", pipeline: "Closer Weddings", created_at: "2026-04-10T15:00:00Z", data_fechamento: "2026-04-20T15:00:00Z" }),
+            deal({ id: "1", pipeline: "Closer Weddings", created_at: "2026-04-10T15:00:00Z", data_qualificado: "2026-04-12T15:00:00Z", data_fechamento: "2026-04-20T15:00:00Z" }),
             // Criado em abril, fechou em maio (fora do período) → SÓ Coorte conta
-            deal({ id: "2", pipeline: "Closer Weddings", created_at: "2026-04-15T15:00:00Z", data_fechamento: "2026-05-15T15:00:00Z" }),
+            deal({ id: "2", pipeline: "Closer Weddings", created_at: "2026-04-15T15:00:00Z", data_qualificado: "2026-04-18T15:00:00Z", data_fechamento: "2026-05-15T15:00:00Z" }),
             // Criado em março, fechou em abril → SÓ Evento conta (created_at fora)
-            deal({ id: "3", pipeline: "Closer Weddings", created_at: "2026-03-15T15:00:00Z", data_fechamento: "2026-04-25T15:00:00Z" }),
+            deal({ id: "3", pipeline: "Closer Weddings", created_at: "2026-03-15T15:00:00Z", data_qualificado: "2026-03-20T15:00:00Z", data_fechamento: "2026-04-25T15:00:00Z" }),
         ];
         const evento = computeCloserMetrics(deals, fieldMap(), period, { mode: "evento" });
         expect(evento.funnelDetailed.contrato.current).toBe(2); // ids 1 e 3
@@ -156,8 +179,8 @@ describe("computeCloserMetrics — taxas e custos", () => {
 
     it("CAC = spend / contratos; CPL = spend / leads (com Elopment incluso em Lead)", () => {
         const deals = [
-            // 1 contrato (MQL)
-            deal({ id: "1", pipeline: "Closer Weddings", data_fechamento: "2026-04-20T15:00:00Z" }),
+            // 1 contrato — pipeline WW + sinal de funil + data_fechamento
+            deal({ id: "1", pipeline: "Closer Weddings", data_qualificado: "2026-04-15T15:00:00Z", data_fechamento: "2026-04-20T15:00:00Z" }),
             // 2 leads MQL adicionais
             deal({ id: "2", pipeline: "SDR Weddings" }),
             deal({ id: "3", pipeline: "Closer Weddings" }),
@@ -216,10 +239,10 @@ describe("computeCloserMetrics — targets prorrateados", () => {
 describe("computeCloserMetrics — tempo até fechamento", () => {
     it("calcula média de dias entre created_at e data_fechamento dos contratos fechados no período", () => {
         const deals = [
-            // 10 dias
-            deal({ id: "1", pipeline: "Closer Weddings", created_at: "2026-04-01T00:00:00Z", data_fechamento: "2026-04-11T00:00:00Z" }),
-            // 20 dias
-            deal({ id: "2", pipeline: "Closer Weddings", created_at: "2026-04-05T00:00:00Z", data_fechamento: "2026-04-25T00:00:00Z" }),
+            // 10 dias — contrato válido (sinal de funil)
+            deal({ id: "1", pipeline: "Closer Weddings", created_at: "2026-04-01T00:00:00Z", data_qualificado: "2026-04-05T00:00:00Z", data_fechamento: "2026-04-11T00:00:00Z" }),
+            // 20 dias — contrato válido (sinal de funil)
+            deal({ id: "2", pipeline: "Closer Weddings", created_at: "2026-04-05T00:00:00Z", data_qualificado: "2026-04-10T00:00:00Z", data_fechamento: "2026-04-25T00:00:00Z" }),
             // Não fechou — não conta
             deal({ id: "3", pipeline: "Closer Weddings" }),
         ];
@@ -240,9 +263,9 @@ describe("computeCloserMetrics — tempo até fechamento", () => {
 describe("computeCloserMetrics — cohort de fechamento", () => {
     it("classifica leads em fechou / aberto / perdeu (sem overlap)", () => {
         const deals = [
-            // Fechou
-            deal({ id: "1", pipeline: "Closer Weddings", data_fechamento: "2026-04-20T15:00:00Z" }),
-            deal({ id: "2", pipeline: "SDR Weddings", data_fechamento: "2026-04-22T15:00:00Z" }),
+            // Fechou — pipeline WW + sinal de funil + data_fechamento (isClosedWwContract OK)
+            deal({ id: "1", pipeline: "Closer Weddings", data_qualificado: "2026-04-15T15:00:00Z", data_fechamento: "2026-04-20T15:00:00Z" }),
+            deal({ id: "2", pipeline: "SDR Weddings", data_horario_agendamento_closer: "2026-04-15T15:00:00Z", data_fechamento: "2026-04-22T15:00:00Z" }),
             // Perdeu (status="2", sem data_fechamento)
             deal({ id: "3", pipeline: "Closer Weddings", status: "2" }),
             // Em aberto (status="1", sem data_fechamento)

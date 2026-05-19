@@ -7,6 +7,24 @@ export interface VersionEntry {
 
 export const VERSION_HISTORY: VersionEntry[] = [
     {
+        version: "2.9.1",
+        date: "07/05/2026",
+        description: "Nova aba Board Mensal (KPI × mês com toggle Coorte/Evento e janela configurável) + regra canônica isClosedWwContract corrigindo subestimação de ~67% em contratos (deals migram para pós-venda após fechar).",
+        changes: [
+            "Nova aba Board Mensal — tabela KPI × mês com 11 linhas (Invest, Leads, MQL, Qualif SDR, Reun Closer, Contratos, CAC, Conv Lead→MQL, Conv SDR→Closer, Close Rate, Win Rate). Toggle modo Evento/Coorte (default Evento, espelho SDR/Closer). Janela configurável: 3m/6m/12m/Ano corrente (default 6m + atual). Mês corrente com meta prorrateada (× dias decorridos / dias do mês).",
+            "Toggle Coorte/Evento: Evento conta pelo timestamp do evento próprio; Coorte ancora pela `created_at` no mês e mostra o que aconteceu com essa coorte. Em Coorte as taxas são reais (subset); em Evento são informativas. Banner amarelo avisa que coortes recentes têm leads ainda no funil.",
+            "Conv SDR → Closer recalibrada: era `reuniões realizadas / qualif`; agora `contratos / qualif` — sinaliza qualidade da qualificação do SDR (% do que ele aprovou virou venda).",
+            "Linha Leads (6 pipelines + Elopment via isInWwLeadsPipeline) adicionada acima de MQL.",
+            "Nova regra canônica `isClosedWwContract` em lib/funnel-utils.ts: 3 sinais cumulativos — data_fechamento + pipeline na whitelist WW (11 pipelines incluindo pós-venda Convidados/Convidados - Michelly/WW - Gestão Casamento/WW - Gestão Convidados/Produção) + sinal de funil (data_qualificado OR data_horario_agendamento_closer).",
+            "Bug fix histórico: dashboard mostrava 4 contratos em mai/2025 quando o real era 13 (12 WW + 1 Trips). Causa: filtro só por MQL pipeline perdia os 8 deals que tinham migrado para pós-venda após fechar. Validação 19 meses: ~150 contratos totais, ~141 WW corrigidos.",
+            "Helpers retroativos `isWwLeadHistoric` e `isWwMqlHistoric` incluem pipelines de pós-venda quando há sinal de funil, evitando subestimação de Lead/MQL/Qualif/Reun em meses antigos.",
+            "Aplicação consistente: motor Board Mensal, motor Closer (Contrato + Cohort de Fechamento), FunnelMetaTab (campo vendas) agora usam `isClosedWwContract`. SDR não tem KPI de contratos diretamente.",
+            "Memória de projeto `project_ww_contract_definition.md` documenta a regra completa + onde aplica. Tooltip `STAGE_DEFINITION` por KPI no Board Mensal explica modo Evento/Coorte e fórmulas. JSDoc denso em funnel-utils.ts.",
+            "Pendência sinalizada: endpoint `/api/board/weekly` (Cowork) em lib/board/funnel-ww.ts usa filtro antigo (LEADS_PIPELINES = 5 sem Elopment, sem pós-venda). Subestima contratos também. Sprint dedicado para alinhar.",
+            "2 testes novos em metrics-closer.test.ts (contrato em pipeline pós-venda + rejeição sem sinal de funil) + 6 fixtures ajustadas. Suite 323/328 verdes (5 falhas pré-existentes MonthSelector mantidas).",
+        ],
+    },
+    {
         version: "2.9.0",
         date: "06/05/2026",
         description: "Redesign da aba Closer (continuação do funil SDR) — funil de 3 etapas (Reunião Agendada → Reunião Realizada → Contrato), CAC + CPL + Tempo até Fechamento, Cohort de Fechamento substituindo MM4s legacy, motivos de perda preservados. Mesmo padrão visual da SDR (modo calendário, Coorte/Evento, tooltips por etapa).",
